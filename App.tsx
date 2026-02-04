@@ -767,6 +767,55 @@ export default function App() {
     }
   };
 
+  const handleDeleteSong = async (song: Song) => {
+    if (!token) return;
+
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${song.title}"? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      // Call API to delete song
+      await songsApi.deleteSong(song.id, token);
+
+      // Remove from songs list
+      setSongs(prev => prev.filter(s => s.id !== song.id));
+
+      // Remove from liked songs if it was liked
+      setLikedSongIds(prev => {
+        const next = new Set(prev);
+        next.delete(song.id);
+        return next;
+      });
+
+      // Handle if deleted song is currently selected
+      if (selectedSong?.id === song.id) {
+        setSelectedSong(null);
+      }
+
+      // Handle if deleted song is currently playing
+      if (currentSong?.id === song.id) {
+        setCurrentSong(null);
+        setIsPlaying(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.src = '';
+        }
+      }
+
+      // Remove from play queue if present
+      setPlayQueue(prev => prev.filter(s => s.id !== song.id));
+
+      showToast('Song deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete song:', error);
+      showToast('Failed to delete song', 'error');
+    }
+  };
+
   const createPlaylist = async (name: string, description: string) => {
     if (!token) return;
     try {
@@ -943,6 +992,7 @@ export default function App() {
                 onShowDetails={handleShowDetails}
                 onNavigateToProfile={handleNavigateToProfile}
                 onReusePrompt={handleReuse}
+                onDelete={handleDeleteSong}
               />
             </div>
 
@@ -962,6 +1012,7 @@ export default function App() {
                   onPlay={playSong}
                   isPlaying={isPlaying}
                   currentSong={currentSong}
+                  onDelete={handleDeleteSong}
                 />
               </div>
             )}
@@ -1031,6 +1082,7 @@ export default function App() {
         onOpenVideo={() => currentSong && openVideoGenerator(currentSong)}
         onReusePrompt={() => currentSong && handleReuse(currentSong)}
         onAddToPlaylist={() => currentSong && openAddToPlaylistModal(currentSong)}
+        onDelete={() => currentSong && handleDeleteSong(currentSong)}
       />
 
       <CreatePlaylistModal
@@ -1092,6 +1144,7 @@ export default function App() {
               onPlay={playSong}
               isPlaying={isPlaying}
               currentSong={currentSong}
+              onDelete={handleDeleteSong}
             />
           </div>
         </div>
