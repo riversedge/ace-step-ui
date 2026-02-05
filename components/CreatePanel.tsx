@@ -115,6 +115,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   // Common
   const [instrumental, setInstrumental] = useState(false);
   const [vocalLanguage, setVocalLanguage] = useState('en');
+  const [vocalGender, setVocalGender] = useState<'male' | 'female' | ''>('');
 
   // Music Parameters
   const [bpm, setBpm] = useState(0);
@@ -607,6 +608,13 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   };
 
   const handleGenerate = () => {
+    const styleWithGender = (() => {
+      if (!vocalGender) return style;
+      const genderHint = vocalGender === 'male' ? 'Male vocals' : 'Female vocals';
+      const trimmed = style.trim();
+      return trimmed ? `${trimmed}\n${genderHint}` : genderHint;
+    })();
+
     // Bulk generation: loop bulkCount times
     for (let i = 0; i < bulkCount; i++) {
       // Seed handling: first job uses user's seed, rest get random seeds
@@ -623,7 +631,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
         songDescription: customMode ? undefined : songDescription,
         prompt: lyrics,
         lyrics,
-        style,
+        style: styleWithGender,
         title: bulkCount > 1 ? `${title} (${i + 1})` : title,
         instrumental,
         vocalLanguage,
@@ -787,15 +795,33 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
               <div className="px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 border-b border-zinc-100 dark:border-white/5 bg-zinc-50 dark:bg-white/5">
                 Vocal Language
               </div>
-              <select
-                value={vocalLanguage}
-                onChange={(e) => setVocalLanguage(e.target.value)}
-                className="w-full bg-transparent p-3 text-sm text-zinc-900 dark:text-white focus:outline-none"
-              >
-                {VOCAL_LANGUAGES.map(lang => (
-                  <option key={lang.value} value={lang.value}>{lang.label}</option>
-                ))}
-              </select>
+              <div className="flex flex-wrap items-center gap-2 p-3">
+                <select
+                  value={vocalLanguage}
+                  onChange={(e) => setVocalLanguage(e.target.value)}
+                  className="flex-1 min-w-[180px] bg-transparent text-sm text-zinc-900 dark:text-white focus:outline-none"
+                >
+                  {VOCAL_LANGUAGES.map(lang => (
+                    <option key={lang.value} value={lang.value}>{lang.label}</option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setVocalGender(vocalGender === 'male' ? '' : 'male')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${vocalGender === 'male' ? 'bg-pink-600 text-white border-pink-600' : 'border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-white/20'}`}
+                  >
+                    Male
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVocalGender(vocalGender === 'female' ? '' : 'female')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${vocalGender === 'female' ? 'bg-pink-600 text-white border-pink-600' : 'border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-white/20'}`}
+                  >
+                    Female
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Quick Settings (Simple Mode) */}
@@ -1214,6 +1240,27 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                     <option key={lang.value} value={lang.value}>{lang.label}</option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide px-1">
+                  Vocal Gender
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setVocalGender(vocalGender === 'male' ? '' : 'male')}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${vocalGender === 'male' ? 'bg-pink-600 text-white border-pink-600' : 'border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-white/20'}`}
+                  >
+                    Male
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVocalGender(vocalGender === 'female' ? '' : 'female')}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${vocalGender === 'female' ? 'bg-pink-600 text-white border-pink-600' : 'border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-white/20'}`}
+                  >
+                    Female
+                  </button>
+                </div>
               </div>
             </div>
           )}
