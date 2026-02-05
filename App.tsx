@@ -950,6 +950,60 @@ export default function App() {
     }
   };
 
+  const handleDeleteSongs = async (songsToDelete: Song[]) => {
+    if (!token || songsToDelete.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Delete ${songsToDelete.length} songs? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    const idsToDelete = new Set(songsToDelete.map(song => song.id));
+    const succeeded: string[] = [];
+    const failed: string[] = [];
+
+    for (const song of songsToDelete) {
+      try {
+        await songsApi.deleteSong(song.id, token);
+        succeeded.push(song.id);
+      } catch (error) {
+        console.error('Failed to delete song:', error);
+        failed.push(song.id);
+      }
+    }
+
+    if (succeeded.length > 0) {
+      setSongs(prev => prev.filter(s => !idsToDelete.has(s.id) || failed.includes(s.id)));
+
+      setLikedSongIds(prev => {
+        const next = new Set(prev);
+        succeeded.forEach(id => next.delete(id));
+        return next;
+      });
+
+      if (selectedSong?.id && succeeded.includes(selectedSong.id)) {
+        setSelectedSong(null);
+      }
+
+      if (currentSong?.id && succeeded.includes(currentSong.id)) {
+        setCurrentSong(null);
+        setIsPlaying(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.src = '';
+        }
+      }
+
+      setPlayQueue(prev => prev.filter(s => !idsToDelete.has(s.id) || failed.includes(s.id)));
+    }
+
+    if (failed.length > 0) {
+      showToast(`Deleted ${succeeded.length}/${songsToDelete.length} songs`, 'error');
+    } else {
+      showToast('Songs deleted successfully');
+    }
+  };
+
   const handleDeleteReferenceTrack = async (trackId: string) => {
     if (!token) return;
     const confirmed = window.confirm('Delete this upload? This action cannot be undone.');
@@ -1156,6 +1210,7 @@ export default function App() {
                 onNavigateToProfile={handleNavigateToProfile}
                 onReusePrompt={handleReuse}
                 onDelete={handleDeleteSong}
+                onDeleteMany={handleDeleteSongs}
               />
             </div>
 

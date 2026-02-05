@@ -276,12 +276,29 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                                 </div>
                                             </div>
                                         </div>
-                                        <button
-                                            className="text-xs px-2 py-1 rounded-full border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
-                                            onClick={() => openSource(song.generationParams?.referenceAudioUrl)}
-                                        >
-                                            Open
-                                        </button>
+                                            <button
+                                                className="text-xs px-2 py-1 rounded-full border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
+                                                onClick={() => {
+                                                    if (!song.generationParams?.referenceAudioUrl || !onPlay) return;
+                                                    const previewSong = {
+                                                        id: `ref_${song.id}`,
+                                                        title: song.generationParams?.referenceAudioTitle || getSourceLabel(song.generationParams?.referenceAudioUrl),
+                                                        lyrics: '',
+                                                        style: 'Reference',
+                                                        coverUrl: song.coverUrl,
+                                                        duration: '0:00',
+                                                        createdAt: new Date(),
+                                                        tags: [],
+                                                        audioUrl: song.generationParams?.referenceAudioUrl,
+                                                        isPublic: false,
+                                                        userId: song.userId,
+                                                        creator: song.creator,
+                                                    };
+                                                    onPlay(previewSong);
+                                                }}
+                                            >
+                                                Play
+                                            </button>
                                     </div>
                                 )}
                                 {song.generationParams?.sourceAudioUrl && (
@@ -295,12 +312,29 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                                 </div>
                                             </div>
                                         </div>
-                                        <button
-                                            className="text-xs px-2 py-1 rounded-full border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
-                                            onClick={() => openSource(song.generationParams?.sourceAudioUrl)}
-                                        >
-                                            Open
-                                        </button>
+                                            <button
+                                                className="text-xs px-2 py-1 rounded-full border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
+                                                onClick={() => {
+                                                    if (!song.generationParams?.sourceAudioUrl || !onPlay) return;
+                                                    const previewSong = {
+                                                        id: `cover_${song.id}`,
+                                                        title: song.generationParams?.sourceAudioTitle || getSourceLabel(song.generationParams?.sourceAudioUrl),
+                                                        lyrics: '',
+                                                        style: 'Cover',
+                                                        coverUrl: song.coverUrl,
+                                                        duration: '0:00',
+                                                        createdAt: new Date(),
+                                                        tags: [],
+                                                        audioUrl: song.generationParams?.sourceAudioUrl,
+                                                        isPublic: false,
+                                                        userId: song.userId,
+                                                        creator: song.creator,
+                                                    };
+                                                    onPlay(previewSong);
+                                                }}
+                                            >
+                                                Play
+                                            </button>
                                     </div>
                                 )}
                             </div>

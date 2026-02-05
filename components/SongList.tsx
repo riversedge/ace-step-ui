@@ -21,6 +21,7 @@ interface SongListProps {
     onNavigateToProfile?: (username: string) => void;
     onReusePrompt?: (song: Song) => void;
     onDelete?: (song: Song) => void;
+    onDeleteMany?: (songs: Song[]) => void;
 }
 
 // ... existing code ...
@@ -51,12 +52,15 @@ export const SongList: React.FC<SongListProps> = ({
     onShowDetails,
     onNavigateToProfile,
     onReusePrompt,
-    onDelete
+    onDelete,
+    onDeleteMany
 }) => {
     const { user } = useAuth();
     const [searchQuery, setSearchQuery] = useState('');
     const [activeFilters, setActiveFilters] = useState<Set<FilterType>>(new Set());
     const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [isSelecting, setIsSelecting] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const filterRef = useRef<HTMLDivElement>(null);
 
     // Close filter dropdown when clicking outside
@@ -69,6 +73,18 @@ export const SongList: React.FC<SongListProps> = ({
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    useEffect(() => {
+        setSelectedIds(prev => {
+            if (prev.size === 0) return prev;
+            const validIds = new Set(songs.map(song => song.id));
+            const next = new Set<string>();
+            prev.forEach(id => {
+                if (validIds.has(id)) next.add(id);
+            });
+            return next;
+        });
+    }, [songs]);
 
     const toggleFilter = (filterId: FilterType) => {
         setActiveFilters(prev => {
@@ -103,6 +119,14 @@ export const SongList: React.FC<SongListProps> = ({
             return true;
         });
     }, [songs, searchQuery, activeFilters, likedSongIds]);
+
+    const selectableSongs = useMemo(
+        () => filteredSongs.filter(song => !song.isGenerating),
+        [filteredSongs]
+    );
+
+    const allSelected = selectableSongs.length > 0 && selectableSongs.every(song => selectedIds.has(song.id));
+    const selectedSongs = selectableSongs.filter(song => selectedIds.has(song.id));
 
     return (
         <div className="flex-1 bg-white dark:bg-black h-full overflow-y-auto custom-scrollbar p-6 pb-32 transition-colors duration-300">
@@ -175,7 +199,57 @@ export const SongList: React.FC<SongListProps> = ({
                                 </div>
                             )}
                         </div>
+
+                        <button
+                            onClick={() => {
+                                setIsSelecting(prev => !prev);
+                                setSelectedIds(new Set());
+                            }}
+                            className={`border text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all select-none ${isSelecting
+                                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-transparent'
+                                    : 'bg-zinc-100 dark:bg-[#121214] hover:bg-zinc-200 dark:hover:bg-white/5 border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-white'
+                                }`}
+                        >
+                            Select
+                        </button>
                     </div>
+
+                    {isSelecting && (
+                        <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/5 px-4 py-3">
+                            <div className="text-sm text-zinc-600 dark:text-zinc-300">
+                                {selectedSongs.length} selected
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        const next = new Set<string>();
+                                        if (!allSelected) {
+                                            selectableSongs.forEach(song => next.add(song.id));
+                                        }
+                                        setSelectedIds(next);
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-white/20"
+                                >
+                                    {allSelected ? 'Clear all' : 'Select all'}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (!selectedSongs.length) return;
+                                        onDeleteMany?.(selectedSongs);
+                                        setSelectedIds(new Set());
+                                        setIsSelecting(false);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${selectedSongs.length
+                                            ? 'border-red-500 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10'
+                                            : 'border-zinc-200 dark:border-white/10 text-zinc-400 cursor-not-allowed'
+                                        }`}
+                                    disabled={!selectedSongs.length}
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* List */}
@@ -200,11 +274,22 @@ export const SongList: React.FC<SongListProps> = ({
                                 song={song}
                                 isCurrent={currentSong?.id === song.id}
                                 isSelected={selectedSong?.id === song.id}
+                                isSelectionMode={isSelecting}
+                                isChecked={selectedIds.has(song.id)}
                                 isLiked={likedSongIds.has(song.id)}
                                 isPlaying={isPlaying}
                                 isOwner={user?.id === song.userId}
                                 onPlay={() => onPlay(song)}
                                 onSelect={() => onSelect(song)}
+                                onToggleSelect={() => {
+                                    if (song.isGenerating) return;
+                                    setSelectedIds(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(song.id)) next.delete(song.id);
+                                        else next.add(song.id);
+                                        return next;
+                                    });
+                                }}
                                 onToggleLike={() => onToggleLike(song.id)}
                                 onAddToPlaylist={() => onAddToPlaylist(song)}
                                 onOpenVideo={() => onOpenVideo && onOpenVideo(song)}
@@ -225,11 +310,14 @@ interface SongItemProps {
     song: Song;
     isCurrent: boolean;
     isSelected: boolean;
+    isSelectionMode: boolean;
+    isChecked: boolean;
     isLiked: boolean;
     isPlaying: boolean;
     isOwner: boolean;
     onPlay: () => void;
     onSelect: () => void;
+    onToggleSelect: () => void;
     onToggleLike: () => void;
     onAddToPlaylist: () => void;
     onOpenVideo?: () => void;
@@ -243,11 +331,14 @@ const SongItem: React.FC<SongItemProps> = ({
     song,
     isCurrent,
     isSelected,
+    isSelectionMode,
+    isChecked,
     isLiked,
     isPlaying,
     isOwner,
     onPlay,
     onSelect,
+    onToggleSelect,
     onToggleLike,
     onAddToPlaylist,
     onOpenVideo,
@@ -266,6 +357,23 @@ const SongItem: React.FC<SongItemProps> = ({
             onClick={onSelect}
             className={`group flex items-center gap-4 p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#18181b] transition-all cursor-pointer border ${isSelected ? 'bg-zinc-100 dark:bg-[#18181b] border-zinc-200 dark:border-white/10' : 'border-transparent bg-transparent'}`}
         >
+            {isSelectionMode && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSelect();
+                    }}
+                    className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isChecked
+                            ? 'bg-pink-600 border-pink-600 text-white'
+                            : 'border-zinc-300 dark:border-zinc-600 text-transparent hover:border-zinc-400 dark:hover:border-zinc-500'
+                        } ${song.isGenerating ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    disabled={song.isGenerating}
+                    aria-pressed={isChecked}
+                >
+                    <Check size={12} strokeWidth={3} className={isChecked ? 'text-white' : 'text-transparent'} />
+                </button>
+            )}
 
             {/* Cover Art - Reduced size */}
             <div className="relative w-16 h-16 flex-shrink-0 rounded-md bg-zinc-200 dark:bg-zinc-800 overflow-hidden shadow-sm group/image">
