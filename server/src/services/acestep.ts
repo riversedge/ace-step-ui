@@ -255,7 +255,12 @@ async function pollApiResult(taskId: string, maxWaitMs = 600000): Promise<ApiTas
 
       return { status: 1, audioPaths, metas };
     } else if (taskData.status === 2) {
-      throw new Error('Generation failed on API side');
+      const details = taskData.error
+        || taskData.message
+        || taskData.status_message
+        || taskData.result
+        || JSON.stringify(taskData);
+      throw new Error(`Generation failed on API side: ${details}`);
     }
 
     // Still processing
@@ -382,6 +387,8 @@ interface JobStatus {
   status: 'queued' | 'running' | 'succeeded' | 'failed';
   queuePosition?: number;
   etaSeconds?: number;
+  progress?: number;
+  stage?: string;
   result?: GenerationResult;
   error?: string;
 }
@@ -502,6 +509,7 @@ async function processGeneration(
     try {
       // Submit to API
       const { taskId } = await submitToApi(params);
+      job.taskId = taskId;
       console.log(`Job ${jobId}: Submitted to API as task ${taskId}`);
 
       // Poll for result
@@ -830,6 +838,45 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
       queuePosition: job.queuePosition,
       etaSeconds: (job.queuePosition || 1) * 180, // ~3 min per job estimate
     };
+  }
+
+  if (job.status === 'running' && job.taskId) {
+    try {
+      const response = await fetch(`${ACESTEP_API}/query_result`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id_list: [job.taskId] }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const taskData = result.data?.[0];
+        if (taskData?.result) {
+          let resultData: unknown = taskData.result;
+          if (typeof resultData === 'string') {
+            try {
+              resultData = JSON.parse(resultData);
+            } catch {
+              resultData = null;
+            }
+          }
+
+          const item = Array.isArray(resultData) ? resultData[0] : resultData;
+          if (item && typeof item === 'object') {
+            const progress = typeof (item as any).progress === 'number' ? (item as any).progress : undefined;
+            const stage = typeof (item as any).stage === 'string' ? (item as any).stage : undefined;
+            return {
+              status: job.status,
+              etaSeconds: Math.max(0, 180 - elapsed),
+              progress,
+              stage,
+            };
+          }
+        }
+      }
+    } catch {
+      // ignore progress fetch failures, fall back to ETA only
+    }
   }
 
   return {

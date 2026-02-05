@@ -106,6 +106,7 @@ export interface Song {
   user_id?: string;
   created_at: string;
   creator?: string;
+  generation_params?: any;
 }
 
 // Transform songs to have proper audio URLs
@@ -266,6 +267,8 @@ export interface GenerationJob {
   status: 'pending' | 'queued' | 'running' | 'succeeded' | 'failed';
   queuePosition?: number;
   etaSeconds?: number;
+  progress?: number;
+  stage?: string;
   result?: {
     audioUrls: string[];
     bpm?: number;

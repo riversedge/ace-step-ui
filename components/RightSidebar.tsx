@@ -39,6 +39,24 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
         }
     }, [song, user]);
 
+    const getSourceLabel = (url?: string) => {
+        if (!url) return 'None';
+        try {
+            const parsed = new URL(url, window.location.origin);
+            const name = parsed.pathname.split('/').pop();
+            return decodeURIComponent(name || url);
+        } catch {
+            const parts = url.split('/');
+            return decodeURIComponent(parts[parts.length - 1] || url);
+        }
+    };
+
+    const openSource = (url?: string) => {
+        if (!url) return;
+        const resolved = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+        window.open(resolved, '_blank');
+    };
+
 
     if (!song) return (
         <div className="w-full h-full bg-zinc-50 dark:bg-suno-panel border-l border-zinc-200 dark:border-white/5 flex items-center justify-center text-zinc-400 dark:text-zinc-500 text-sm transition-colors duration-300">
@@ -238,6 +256,55 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                             </button>
                         </div>
                     </div>
+
+                    {(song.generationParams?.referenceAudioUrl || song.generationParams?.sourceAudioUrl) && (
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+                                <LinkIcon size={14} />
+                                Sources
+                            </div>
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900/40 px-3 py-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <Music size={14} className="text-zinc-400" />
+                                        <div className="min-w-0">
+                                            <div className="text-xs text-zinc-500">Reference</div>
+                                            <div className="text-sm font-medium text-zinc-900 dark:text-white truncate">
+                                                {getSourceLabel(song.generationParams?.referenceAudioUrl)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {song.generationParams?.referenceAudioUrl && (
+                                        <button
+                                            className="text-xs px-2 py-1 rounded-full border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
+                                            onClick={() => openSource(song.generationParams?.referenceAudioUrl)}
+                                        >
+                                            Open
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900/40 px-3 py-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <Layers size={14} className="text-zinc-400" />
+                                        <div className="min-w-0">
+                                            <div className="text-xs text-zinc-500">Cover</div>
+                                            <div className="text-sm font-medium text-zinc-900 dark:text-white truncate">
+                                                {getSourceLabel(song.generationParams?.sourceAudioUrl)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {song.generationParams?.sourceAudioUrl && (
+                                        <button
+                                            className="text-xs px-2 py-1 rounded-full border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
+                                            onClick={() => openSource(song.generationParams?.sourceAudioUrl)}
+                                        >
+                                            Open
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="h-px bg-zinc-200 dark:bg-white/5 w-full"></div>
 

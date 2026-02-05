@@ -293,6 +293,14 @@ export default function App() {
           viewCount: s.view_count || 0,
           userId: s.user_id,
           creator: s.creator,
+          generationParams: (() => {
+            try {
+              if (!s.generation_params) return undefined;
+              return typeof s.generation_params === 'string' ? JSON.parse(s.generation_params) : s.generation_params;
+            } catch {
+              return undefined;
+            }
+          })(),
         });
 
         const mySongs = mySongsRes.songs.map(mapSong);
@@ -671,6 +679,8 @@ export default function App() {
               return {
                 ...s,
                 queuePosition: status.status === 'queued' ? status.queuePosition : undefined,
+                progress: status.status === 'running' ? status.progress : undefined,
+                stage: status.status === 'running' ? status.stage : undefined,
               };
             }
             return s;

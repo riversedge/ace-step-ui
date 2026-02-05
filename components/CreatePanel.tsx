@@ -445,11 +445,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
 
       // Also set as current reference/source
       const selectedTarget = target ?? audioModalTarget;
-      if (selectedTarget === 'reference') {
-        setReferenceAudioUrl(data.track.audio_url);
-      } else {
-        setSourceAudioUrl(data.track.audio_url);
-      }
+      applyAudioTargetUrl(selectedTarget, data.track.audio_url);
       setShowAudioModal(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload failed';
@@ -481,11 +477,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   };
 
   const useReferenceTrack = (track: ReferenceTrack) => {
-    if (audioModalTarget === 'reference') {
-      setReferenceAudioUrl(track.audio_url);
-    } else {
-      setSourceAudioUrl(track.audio_url);
-    }
+    applyAudioTargetUrl(audioModalTarget, track.audio_url);
     setShowAudioModal(false);
     setPlayingTrackId(null);
   };
@@ -507,17 +499,24 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
 
   const applyAudioUrl = () => {
     if (!tempAudioUrl.trim()) return;
-    if (audioModalTarget === 'reference') {
-      setReferenceAudioUrl(tempAudioUrl.trim());
+    applyAudioTargetUrl(audioModalTarget, tempAudioUrl.trim());
+    setShowAudioModal(false);
+    setTempAudioUrl('');
+  };
+
+  const applyAudioTargetUrl = (target: 'reference' | 'source', url: string) => {
+    if (target === 'reference') {
+      setReferenceAudioUrl(url);
       setReferenceTime(0);
       setReferenceDuration(0);
     } else {
-      setSourceAudioUrl(tempAudioUrl.trim());
+      setSourceAudioUrl(url);
       setSourceTime(0);
       setSourceDuration(0);
+      if (taskType === 'text2music') {
+        setTaskType('cover');
+      }
     }
-    setShowAudioModal(false);
-    setTempAudioUrl('');
   };
 
   const formatTime = (time: number) => {

@@ -355,6 +355,20 @@ const SongItem: React.FC<SongItemProps> = ({
                     <p className="text-xs text-zinc-500 dark:text-zinc-500 line-clamp-2 pt-1 font-medium max-w-2xl">
                         {song.style}
                     </p>
+                    {song.isGenerating && (
+                        <div className="pt-2">
+                            <div className="h-1 rounded-full bg-zinc-200/70 dark:bg-white/10 overflow-hidden">
+                                {song.progress !== undefined ? (
+                                    <div
+                                        className="h-full bg-gradient-to-r from-pink-500 to-purple-600 transition-all"
+                                        style={{ width: `${Math.min(100, Math.max(0, song.progress * 100))}%` }}
+                                    />
+                                ) : (
+                                    <div className="h-full w-1/3 bg-gradient-to-r from-pink-500 to-purple-600 animate-pulse" />
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Actions Row - Hidden while generating */}
