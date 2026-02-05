@@ -90,6 +90,8 @@ export interface GenerationParams {
   // Expert Parameters
   referenceAudioUrl?: string;
   sourceAudioUrl?: string;
+  referenceAudioTitle?: string;
+  sourceAudioTitle?: string;
   audioCodes?: string;
   repaintingStart?: number;
   repaintingEnd?: number;

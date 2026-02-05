@@ -43,11 +43,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
         if (!url) return 'None';
         try {
             const parsed = new URL(url, window.location.origin);
-            const name = parsed.pathname.split('/').pop();
-            return decodeURIComponent(name || url);
+            const name = decodeURIComponent(parsed.pathname.split('/').pop() || url);
+            return name.replace(/\.[^/.]+$/, '') || name;
         } catch {
             const parts = url.split('/');
-            return decodeURIComponent(parts[parts.length - 1] || url);
+            const name = decodeURIComponent(parts[parts.length - 1] || url);
+            return name.replace(/\.[^/.]+$/, '') || name;
         }
     };
 
@@ -264,44 +265,44 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ song, onClose, onOpe
                                 Sources
                             </div>
                             <div className="space-y-2">
-                                <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900/40 px-3 py-2">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <Music size={14} className="text-zinc-400" />
-                                        <div className="min-w-0">
-                                            <div className="text-xs text-zinc-500">Reference</div>
-                                            <div className="text-sm font-medium text-zinc-900 dark:text-white truncate">
-                                                {getSourceLabel(song.generationParams?.referenceAudioUrl)}
+                                {song.generationParams?.referenceAudioUrl && (
+                                    <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900/40 px-3 py-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <Music size={14} className="text-zinc-400" />
+                                            <div className="min-w-0">
+                                                <div className="text-xs text-zinc-500">Reference</div>
+                                                <div className="text-sm font-medium text-zinc-900 dark:text-white truncate">
+                                                    {song.generationParams?.referenceAudioTitle || getSourceLabel(song.generationParams?.referenceAudioUrl)}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                    {song.generationParams?.referenceAudioUrl && (
                                         <button
                                             className="text-xs px-2 py-1 rounded-full border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
                                             onClick={() => openSource(song.generationParams?.referenceAudioUrl)}
                                         >
                                             Open
                                         </button>
-                                    )}
-                                </div>
-                                <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900/40 px-3 py-2">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <Layers size={14} className="text-zinc-400" />
-                                        <div className="min-w-0">
-                                            <div className="text-xs text-zinc-500">Cover</div>
-                                            <div className="text-sm font-medium text-zinc-900 dark:text-white truncate">
-                                                {getSourceLabel(song.generationParams?.sourceAudioUrl)}
+                                    </div>
+                                )}
+                                {song.generationParams?.sourceAudioUrl && (
+                                    <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900/40 px-3 py-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <Layers size={14} className="text-zinc-400" />
+                                            <div className="min-w-0">
+                                                <div className="text-xs text-zinc-500">Cover</div>
+                                                <div className="text-sm font-medium text-zinc-900 dark:text-white truncate">
+                                                    {song.generationParams?.sourceAudioTitle || getSourceLabel(song.generationParams?.sourceAudioUrl)}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                    {song.generationParams?.sourceAudioUrl && (
                                         <button
                                             className="text-xs px-2 py-1 rounded-full border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
                                             onClick={() => openSource(song.generationParams?.sourceAudioUrl)}
                                         >
                                             Open
                                         </button>
-                                    )}
-                                </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

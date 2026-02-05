@@ -565,6 +565,14 @@ export default function App() {
         viewCount: s.view_count || 0,
         userId: s.user_id,
         creator: s.creator,
+        generationParams: (() => {
+          try {
+            if (!s.generation_params) return undefined;
+            return typeof s.generation_params === 'string' ? JSON.parse(s.generation_params) : s.generation_params;
+          } catch {
+            return undefined;
+          }
+        })(),
       }));
 
       // Preserve any generating songs that aren't in the loaded list
@@ -579,6 +587,11 @@ export default function App() {
         // Sort by creation date, newest first
         return mergedSongs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       });
+
+      // If the current selection was a temp/generating song, replace it with newest real song
+      if (selectedSong?.isGenerating || (selectedSong && !loadedSongs.some(s => s.id === selectedSong.id))) {
+        setSelectedSong(loadedSongs[0] ?? null);
+      }
     } catch (error) {
       console.error('Failed to refresh songs:', error);
     }
@@ -623,7 +636,7 @@ export default function App() {
         title: params.title,
         instrumental: params.instrumental,
         vocalLanguage: params.vocalLanguage,
-        duration: params.duration,
+        duration: params.duration && params.duration > 0 ? params.duration : undefined,
         bpm: params.bpm,
         keyScale: params.keyScale,
         timeSignature: params.timeSignature,
@@ -643,6 +656,8 @@ export default function App() {
         lmNegativePrompt: params.lmNegativePrompt,
         referenceAudioUrl: params.referenceAudioUrl,
         sourceAudioUrl: params.sourceAudioUrl,
+        referenceAudioTitle: params.referenceAudioTitle,
+        sourceAudioTitle: params.sourceAudioTitle,
         audioCodes: params.audioCodes,
         repaintingStart: params.repaintingStart,
         repaintingEnd: params.repaintingEnd,
@@ -672,6 +687,9 @@ export default function App() {
       const pollInterval = setInterval(async () => {
         try {
           const status = await generateApi.getStatus(job.jobId, token);
+          const normalizedProgress = Number.isFinite(Number(status.progress))
+            ? (Number(status.progress) > 1 ? Number(status.progress) / 100 : Number(status.progress))
+            : undefined;
 
           // Update queue position on the temp song
           setSongs(prev => prev.map(s => {
@@ -679,8 +697,8 @@ export default function App() {
               return {
                 ...s,
                 queuePosition: status.status === 'queued' ? status.queuePosition : undefined,
-                progress: status.status === 'running' ? status.progress : undefined,
-                stage: status.status === 'running' ? status.stage : undefined,
+                progress: normalizedProgress ?? s.progress,
+                stage: status.stage ?? s.stage,
               };
             }
             return s;

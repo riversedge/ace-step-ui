@@ -96,6 +96,8 @@ interface GenerateBody {
   // Expert Parameters
   referenceAudioUrl?: string;
   sourceAudioUrl?: string;
+  referenceAudioTitle?: string;
+  sourceAudioTitle?: string;
   audioCodes?: string;
   repaintingStart?: number;
   repaintingEnd?: number;
@@ -196,6 +198,8 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
       lmNegativePrompt,
       referenceAudioUrl,
       sourceAudioUrl,
+      referenceAudioTitle,
+      sourceAudioTitle,
       audioCodes,
       repaintingStart,
       repaintingEnd,
@@ -259,6 +263,8 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
       lmNegativePrompt,
       referenceAudioUrl,
       sourceAudioUrl,
+      referenceAudioTitle,
+      sourceAudioTitle,
       audioCodes,
       repaintingStart,
       repaintingEnd,
@@ -544,6 +550,60 @@ router.get('/health', async (_req, res: Response) => {
     res.json({ healthy });
   } catch (error) {
     res.json({ healthy: false, error: (error as Error).message });
+  }
+});
+
+router.get('/limits', async (_req, res: Response) => {
+  try {
+    const { spawn } = await import('child_process');
+    const ACESTEP_DIR = process.env.ACESTEP_PATH || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../ACE-Step-1.5');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const SCRIPTS_DIR = path.join(__dirname, '../../scripts');
+    const LIMITS_SCRIPT = path.join(SCRIPTS_DIR, 'get_limits.py');
+    const pythonPath = resolvePythonPath(ACESTEP_DIR);
+
+    const result = await new Promise<{ success: boolean; data?: any; error?: string }>((resolve) => {
+      const proc = spawn(pythonPath, [LIMITS_SCRIPT], {
+        cwd: ACESTEP_DIR,
+        env: {
+          ...process.env,
+          ACESTEP_PATH: ACESTEP_DIR,
+        },
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (data) => { stdout += data.toString(); });
+      proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+      proc.on('close', (code) => {
+        if (code === 0 && stdout) {
+          try {
+            const parsed = JSON.parse(stdout);
+            resolve({ success: true, data: parsed });
+          } catch {
+            resolve({ success: false, error: 'Failed to parse limits result' });
+          }
+        } else {
+          resolve({ success: false, error: stderr || 'Failed to read limits' });
+        }
+      });
+
+      proc.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+
+    if (result.success && result.data) {
+      res.json(result.data);
+    } else {
+      res.status(500).json({ error: result.error || 'Failed to load limits' });
+    }
+  } catch (error) {
+    console.error('Limits error:', error);
+    res.status(500).json({ error: (error as Error).message });
   }
 });
 

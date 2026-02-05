@@ -146,6 +146,8 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   // Expert Parameters (now in Advanced section)
   const [referenceAudioUrl, setReferenceAudioUrl] = useState('');
   const [sourceAudioUrl, setSourceAudioUrl] = useState('');
+  const [referenceAudioTitle, setReferenceAudioTitle] = useState('');
+  const [sourceAudioTitle, setSourceAudioTitle] = useState('');
   const [audioCodes, setAudioCodes] = useState('');
   const [repaintingStart, setRepaintingStart] = useState(0);
   const [repaintingEnd, setRepaintingEnd] = useState(-1);
@@ -169,11 +171,14 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   const [trackName, setTrackName] = useState('');
   const [completeTrackClasses, setCompleteTrackClasses] = useState('');
   const [isFormatCaption, setIsFormatCaption] = useState(false);
+  const [maxDurationWithLm, setMaxDurationWithLm] = useState(240);
+  const [maxDurationWithoutLm, setMaxDurationWithoutLm] = useState(240);
 
   const [isUploadingReference, setIsUploadingReference] = useState(false);
   const [isUploadingSource, setIsUploadingSource] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [isFormatting, setIsFormatting] = useState(false);
+  const [isFormattingStyle, setIsFormattingStyle] = useState(false);
+  const [isFormattingLyrics, setIsFormattingLyrics] = useState(false);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const sourceInputRef = useRef<HTMLInputElement>(null);
@@ -202,10 +207,12 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   const getAudioLabel = (url: string) => {
     try {
       const parsed = new URL(url);
-      return decodeURIComponent(parsed.pathname.split('/').pop() || parsed.hostname);
+      const name = decodeURIComponent(parsed.pathname.split('/').pop() || parsed.hostname);
+      return name.replace(/\.[^/.]+$/, '') || name;
     } catch {
       const parts = url.split('/');
-      return decodeURIComponent(parts[parts.length - 1] || url);
+      const name = decodeURIComponent(parts[parts.length - 1] || url);
+      return name.replace(/\.[^/.]+$/, '') || name;
     }
   };
 
@@ -274,6 +281,34 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
       document.body.style.userSelect = 'auto';
     };
   }, [isResizing]);
+
+  useEffect(() => {
+    const loadLimits = async () => {
+      try {
+        const response = await fetch('/api/generate/limits');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (typeof data.max_duration_with_lm === 'number') {
+          setMaxDurationWithLm(data.max_duration_with_lm);
+        }
+        if (typeof data.max_duration_without_lm === 'number') {
+          setMaxDurationWithoutLm(data.max_duration_without_lm);
+        }
+      } catch {
+        // ignore limits fetch failures
+      }
+    };
+
+    loadLimits();
+  }, []);
+
+  const activeMaxDuration = thinking ? maxDurationWithLm : maxDurationWithoutLm;
+
+  useEffect(() => {
+    if (duration > activeMaxDuration) {
+      setDuration(activeMaxDuration);
+    }
+  }, [duration, activeMaxDuration]);
 
   useEffect(() => {
     const isFileDrag = (e: DragEvent) =>
@@ -357,7 +392,11 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   // Format handler - uses LLM to enhance style/lyrics and auto-fill parameters
   const handleFormat = async (target: 'style' | 'lyrics') => {
     if (!token || !style.trim()) return;
-    setIsFormatting(true);
+    if (target === 'style') {
+      setIsFormattingStyle(true);
+    } else {
+      setIsFormattingLyrics(true);
+    }
     try {
       const result = await generateApi.formatInput({
         caption: style,
@@ -389,7 +428,11 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
       console.error('Format error:', err);
       alert('Format failed. The LLM may not be available.');
     } finally {
-      setIsFormatting(false);
+      if (target === 'style') {
+        setIsFormattingStyle(false);
+      } else {
+        setIsFormattingLyrics(false);
+      }
     }
   };
 
@@ -445,7 +488,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
 
       // Also set as current reference/source
       const selectedTarget = target ?? audioModalTarget;
-      applyAudioTargetUrl(selectedTarget, data.track.audio_url);
+      applyAudioTargetUrl(selectedTarget, data.track.audio_url, data.track.filename);
       setShowAudioModal(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload failed';
@@ -477,7 +520,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   };
 
   const useReferenceTrack = (track: ReferenceTrack) => {
-    applyAudioTargetUrl(audioModalTarget, track.audio_url);
+    applyAudioTargetUrl(audioModalTarget, track.audio_url, track.filename);
     setShowAudioModal(false);
     setPlayingTrackId(null);
   };
@@ -504,13 +547,16 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     setTempAudioUrl('');
   };
 
-  const applyAudioTargetUrl = (target: 'reference' | 'source', url: string) => {
+  const applyAudioTargetUrl = (target: 'reference' | 'source', url: string, title?: string) => {
+    const derivedTitle = title ? title.replace(/\.[^/.]+$/, '') : getAudioLabel(url);
     if (target === 'reference') {
       setReferenceAudioUrl(url);
+      setReferenceAudioTitle(derivedTitle);
       setReferenceTime(0);
       setReferenceDuration(0);
     } else {
       setSourceAudioUrl(url);
+      setSourceAudioTitle(derivedTitle);
       setSourceTime(0);
       setSourceDuration(0);
       if (taskType === 'text2music') {
@@ -601,6 +647,8 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
         lmNegativePrompt,
         referenceAudioUrl: referenceAudioUrl.trim() || undefined,
         sourceAudioUrl: sourceAudioUrl.trim() || undefined,
+        referenceAudioTitle: referenceAudioTitle.trim() || undefined,
+        sourceAudioTitle: sourceAudioTitle.trim() || undefined,
         audioCodes: audioCodes.trim() || undefined,
         repaintingStart,
         repaintingEnd,
@@ -768,7 +816,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                 <input
                   type="range"
                   min="-1"
-                  max="240"
+                  max={activeMaxDuration}
                   step="5"
                   value={duration}
                   onChange={(e) => setDuration(Number(e.target.value))}
@@ -907,7 +955,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                     </button>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate mb-1.5">
-                        {getAudioLabel(referenceAudioUrl)}
+                        {referenceAudioTitle || getAudioLabel(referenceAudioUrl)}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] text-zinc-400 tabular-nums">{formatTime(referenceTime)}</span>
@@ -933,7 +981,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                     </div>
                     <button
                       type="button"
-                      onClick={() => { setReferenceAudioUrl(''); setReferencePlaying(false); setReferenceTime(0); setReferenceDuration(0); }}
+                      onClick={() => { setReferenceAudioUrl(''); setReferenceAudioTitle(''); setReferencePlaying(false); setReferenceTime(0); setReferenceDuration(0); }}
                       className="p-1.5 rounded-full hover:bg-zinc-200 dark:hover:bg-white/10 text-zinc-400 hover:text-zinc-600 dark:hover:text-white transition-colors"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
@@ -960,7 +1008,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                     </button>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate mb-1.5">
-                        {getAudioLabel(sourceAudioUrl)}
+                        {sourceAudioTitle || getAudioLabel(sourceAudioUrl)}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] text-zinc-400 tabular-nums">{formatTime(sourceTime)}</span>
@@ -986,7 +1034,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                     </div>
                     <button
                       type="button"
-                      onClick={() => { setSourceAudioUrl(''); setSourcePlaying(false); setSourceTime(0); setSourceDuration(0); }}
+                      onClick={() => { setSourceAudioUrl(''); setSourceAudioTitle(''); setSourcePlaying(false); setSourceTime(0); setSourceDuration(0); }}
                       className="p-1.5 rounded-full hover:bg-zinc-200 dark:hover:bg-white/10 text-zinc-400 hover:text-zinc-600 dark:hover:text-white transition-colors"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
@@ -1049,12 +1097,12 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                     {instrumental ? 'Instrumental' : 'Vocal'}
                   </button>
                   <button
-                    className={`p-1.5 hover:bg-zinc-200 dark:hover:bg-white/10 rounded transition-colors ${isFormatting ? 'text-pink-500' : 'text-zinc-500 hover:text-black dark:hover:text-white'}`}
+                    className={`p-1.5 hover:bg-zinc-200 dark:hover:bg-white/10 rounded transition-colors ${isFormattingLyrics ? 'text-pink-500' : 'text-zinc-500 hover:text-black dark:hover:text-white'}`}
                     title="AI Format - Enhance style & auto-fill parameters"
                     onClick={() => handleFormat('lyrics')}
-                    disabled={isFormatting || !style.trim()}
+                    disabled={isFormattingLyrics || !style.trim()}
                   >
-                    {isFormatting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    {isFormattingLyrics ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                   </button>
                   <button
                     className="p-1.5 hover:bg-zinc-200 dark:hover:bg-white/10 rounded text-zinc-500 hover:text-black dark:hover:text-white transition-colors"
@@ -1089,12 +1137,12 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                   <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">Genre, mood, instruments, vibe</p>
                 </div>
                 <button
-                  className={`p-1.5 hover:bg-zinc-200 dark:hover:bg-white/10 rounded transition-colors ${isFormatting ? 'text-pink-500' : 'text-zinc-500 hover:text-black dark:hover:text-white'}`}
+                  className={`p-1.5 hover:bg-zinc-200 dark:hover:bg-white/10 rounded transition-colors ${isFormattingStyle ? 'text-pink-500' : 'text-zinc-500 hover:text-black dark:hover:text-white'}`}
                   title="AI Format - Enhance style & auto-fill parameters"
                   onClick={() => handleFormat('style')}
-                  disabled={isFormatting || !style.trim()}
+                  disabled={isFormattingStyle || !style.trim()}
                 >
-                  {isFormatting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  {isFormattingStyle ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 </button>
               </div>
               <textarea
@@ -1258,7 +1306,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
               <input
                 type="range"
                 min="-1"
-                max="240"
+                max={activeMaxDuration}
                 step="5"
                 value={duration}
                 onChange={(e) => setDuration(Number(e.target.value))}
@@ -1266,7 +1314,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
               />
               <div className="flex justify-between text-[10px] text-zinc-500">
                 <span>Auto</span>
-                <span>4 min</span>
+                <span>{Math.round(activeMaxDuration / 60)} min</span>
               </div>
             </div>
 
