@@ -19,6 +19,7 @@ export const config = {
   // ACE-Step API (local)
   acestep: {
     apiUrl: process.env.ACESTEP_API_URL || 'http://localhost:8001',
+    loraConfigPath: process.env.ACESTEP_LORA_CONFIG || '',
   },
 
   // Pexels (optional - for video backgrounds)
