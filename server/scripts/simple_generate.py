@@ -10,6 +10,7 @@ import os
 import sys
 import time
 import torch
+from typing import Any, Dict, List, Optional
 
 # Get ACE-Step path from environment or use default
 ACESTEP_PATH = os.environ.get('ACESTEP_PATH', '/home/ambsd/Desktop/aceui/ACE-Step-1.5')
@@ -24,6 +25,88 @@ from acestep.inference import GenerationParams, GenerationConfig, generate_music
 # Global handlers (initialized once)
 _handler = None
 _llm_handler = None
+_lora_initialized = False
+
+# Optional LoRA auto-load config
+LORA_CONFIG_PATH = os.environ.get("ACESTEP_LORA_CONFIG")
+
+
+def _select_lora_instance(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    instances = config.get("instances")
+    if not isinstance(instances, list):
+        return None
+
+    default_name = config.get("default")
+    enabled_instances: List[Dict[str, Any]] = []
+
+    for item in instances:
+        if not isinstance(item, dict):
+            continue
+        path = item.get("path")
+        if not isinstance(path, str) or not path.strip():
+            continue
+        enabled = item.get("enabled", True)
+        if enabled is False:
+            continue
+        enabled_instances.append(item)
+
+    if not enabled_instances:
+        return None
+
+    if isinstance(default_name, str) and default_name.strip():
+        for item in enabled_instances:
+            if item.get("name") == default_name:
+                return item
+
+    return enabled_instances[0]
+
+
+def _load_lora_from_config(handler: "AceStepHandler") -> None:
+    global _lora_initialized
+    if _lora_initialized:
+        return
+    _lora_initialized = True
+
+    if not LORA_CONFIG_PATH:
+        return
+    if not os.path.exists(LORA_CONFIG_PATH):
+        return
+
+    try:
+        with open(LORA_CONFIG_PATH, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    except Exception as e:
+        print(f"[ACE-Step] LoRA config read failed: {e}", file=sys.stderr)
+        return
+
+    if not isinstance(config, dict):
+        print("[ACE-Step] LoRA config invalid: root is not an object", file=sys.stderr)
+        return
+
+    selected = _select_lora_instance(config)
+    if not selected:
+        return
+
+    lora_path = selected.get("path")
+    if not isinstance(lora_path, str) or not lora_path.strip():
+        return
+
+    lora_path = lora_path.strip()
+    if not os.path.isabs(lora_path):
+        lora_path = os.path.normpath(os.path.join(os.path.dirname(LORA_CONFIG_PATH), lora_path))
+
+    status = handler.load_lora(lora_path)
+    print(f"[ACE-Step] {status}", file=sys.stderr)
+
+    scale = selected.get("scale")
+    if scale is not None:
+        try:
+            scale_val = float(scale)
+            scale_val = max(0.0, min(1.0, scale_val))
+            scale_status = handler.set_lora_scale(scale_val)
+            print(f"[ACE-Step] {scale_status}", file=sys.stderr)
+        except Exception as e:
+            print(f"[ACE-Step] LoRA scale set failed: {e}", file=sys.stderr)
 
 def get_handlers():
     global _handler, _llm_handler
@@ -41,6 +124,7 @@ def get_handlers():
             device=device,
             offload_to_cpu=True,  # For 12GB GPU
         )
+        _load_lora_from_config(_handler)
         _llm_handler = LLMHandler()  # Create but don't initialize (not enough VRAM)
     return _handler, _llm_handler
 

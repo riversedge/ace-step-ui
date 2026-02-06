@@ -353,12 +353,60 @@ PORT=3001
 # ACE-Step API (seamless integration)
 ACESTEP_API_URL=http://localhost:8001
 
+# Optional: LoRA auto-load (forces local Python spawn mode)
+# Point to a JSON config file (see config/lora.json for schema)
+ACESTEP_LORA_CONFIG=./config/lora.json
+
 # Database (local-first, no cloud)
 DATABASE_PATH=./data/acestep.db
 
 # Optional: Pexels API for video backgrounds
 PEXELS_API_KEY=your_key_here
 ```
+
+---
+
+## 🧩 LoRA Auto-Load
+
+ACE-Step UI can auto-load a LoRA adapter at startup by reading a JSON config file and invoking the ACE-Step 1.5 handler. This is handled in the local Python spawn path (not the REST API). When `ACESTEP_LORA_CONFIG` is set, generation will run locally so the LoRA can be loaded.
+
+### How It Works
+1. Create or edit a LoRA config file (example at `config/lora.json`).
+2. Set `ACESTEP_LORA_CONFIG` in `server/.env` to the config path.
+3. Restart ACE-Step UI backend (and the UI if running).
+
+### LoRA Config Schema
+The config is a JSON object with these fields:
+
+1. `default` (string, optional): name of the LoRA to load by default.
+2. `instances` (array, required): list of LoRA entries.
+
+Each entry in `instances`:
+
+1. `name` (string, required): label for the LoRA.
+2. `path` (string, required): path to the LoRA adapter directory (must contain `adapter_config.json`).
+3. `scale` (number, optional): LoRA strength in the range `0.0` to `1.0`. Start at `0.85`, increase toward `1.0` for stronger style, decrease toward `0.6` if it overwhelms the base model.
+4. `enabled` (boolean, optional): set `false` to skip this entry.
+
+### Example
+```json
+{
+  "default": "my_lora",
+  "instances": [
+    {
+      "name": "my_lora",
+      "path": "../ACE-Step-1.5/lora_output/final_lora",
+      "scale": 0.85,
+      "enabled": true
+    }
+  ]
+}
+```
+
+### Notes
+- Only one LoRA is auto-loaded. If `default` is set, that entry is used; otherwise the first enabled entry is loaded.
+- Relative paths are resolved from the LoRA config file location.
+- LoRA auto-load uses the local Python spawn path, not the ACE-Step REST API. Keep the API server stopped or accept that generations will run locally when LoRA is configured.
 
 ---
 
