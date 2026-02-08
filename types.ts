@@ -59,6 +59,7 @@ export interface GenerationParams {
   lyrics: string;
   style: string;
   title: string;
+  ditModel?: string;
 
   // Common
   instrumental: boolean;

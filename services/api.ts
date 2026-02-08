@@ -332,6 +332,16 @@ export const generateApi = {
     status_message?: string;
     error?: string;
   }> => api('/api/generate/format', { method: 'POST', body: params, token }),
+
+  // LoRA management (requires ACE-Step training fork)
+  loadLora: (params: { lora_path: string }, token: string): Promise<{ message: string }> =>
+    api('/api/generate/lora/load', { method: 'POST', body: params, token }),
+
+  unloadLora: (token: string): Promise<{ message: string }> =>
+    api('/api/generate/lora/unload', { method: 'POST', token }),
+
+  setLoraScale: (params: { scale: number }, token: string): Promise<{ message: string }> =>
+    api('/api/generate/lora/scale', { method: 'POST', body: params, token }),
 };
 
 // Users API
