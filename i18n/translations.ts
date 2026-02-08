@@ -43,7 +43,9 @@ export const translations = {
     
     // Sidebar
     aceStepUI: 'ACE-Step UI',
-    
+    collapseSidebar: 'Collapse Sidebar',
+    expandSidebar: 'Expand Sidebar',
+
     // Common
     cancel: 'Cancel',
     save: 'Save',
@@ -479,10 +481,12 @@ export const translations = {
     loadingPlaylist: 'Loading playlist...',
     playlistNotFound: 'Playlist not found',
     deletePlaylistConfirm: 'Are you sure you want to delete this playlist?',
+    artist: 'Artist',
+    deletePlaylist: 'Delete Playlist',
     dateAdded: 'Date Added',
     justNow: 'Just now',
     unknown: 'Unknown',
-    
+
     // SongProfile
     loadingSong: 'Loading song...',
     songNotFound: 'Song not found',
@@ -633,7 +637,9 @@ export const translations = {
     
     // Sidebar
     aceStepUI: 'ACE-Step UI',
-    
+    collapseSidebar: '收起侧边栏',
+    expandSidebar: '展开侧边栏',
+
     // Common
     cancel: '取消',
     save: '保存',
@@ -1069,10 +1075,12 @@ export const translations = {
     loadingPlaylist: '加载播放列表中...',
     playlistNotFound: '播放列表未找到',
     deletePlaylistConfirm: '确定要删除这个播放列表吗？',
+    artist: '艺术家',
+    deletePlaylist: '删除播放列表',
     dateAdded: '添加日期',
     justNow: '刚刚',
     unknown: '未知',
-    
+
     // SongProfile
     loadingSong: '加载歌曲中...',
     songNotFound: '歌曲未找到',
@@ -1223,7 +1231,9 @@ export const translations = {
     
     // Sidebar
     aceStepUI: 'ACE-Step UI',
-    
+    collapseSidebar: 'サイドバーを折りたたむ',
+    expandSidebar: 'サイドバーを展開',
+
     // Common
     cancel: 'キャンセル',
     save: '保存',
@@ -1659,10 +1669,12 @@ export const translations = {
     loadingPlaylist: 'プレイリストを読み込み中...',
     playlistNotFound: 'プレイリストが見つかりません',
     deletePlaylistConfirm: 'このプレイリストを削除してもよろしいですか？',
+    artist: 'アーティスト',
+    deletePlaylist: 'プレイリストを削除',
     dateAdded: '追加日',
     justNow: 'たった今',
     unknown: '不明',
-    
+
     // SongProfile
     loadingSong: '曲を読み込み中...',
     songNotFound: '曲が見つかりません',
@@ -1813,7 +1825,9 @@ export const translations = {
     
     // Sidebar
     aceStepUI: 'ACE-Step UI',
-    
+    collapseSidebar: '사이드바 접기',
+    expandSidebar: '사이드바 펼치기',
+
     // Common
     cancel: '취소',
     save: '저장',
@@ -2249,10 +2263,12 @@ export const translations = {
     loadingPlaylist: '재생목록 로딩 중...',
     playlistNotFound: '재생목록을 찾을 수 없습니다',
     deletePlaylistConfirm: '이 재생목록을 삭제하시겠습니까?',
+    artist: '아티스트',
+    deletePlaylist: '재생목록 삭제',
     dateAdded: '추가일',
     justNow: '방금',
     unknown: '알 수 없음',
-    
+
     // SongProfile
     loadingSong: '곡 로딩 중...',
     songNotFound: '곡을 찾을 수 없습니다',
