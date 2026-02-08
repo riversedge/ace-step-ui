@@ -19,6 +19,7 @@ export interface Song {
   userId?: string;
   creator?: string;
   creator_avatar?: string;
+  ditModel?: string;
 }
 
 export interface Playlist {
