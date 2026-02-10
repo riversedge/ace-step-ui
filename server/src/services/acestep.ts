@@ -615,6 +615,17 @@ async function processGeneration(
   });
 
   try {
+    const updateLocalProgress = (progress?: number, stage?: string): void => {
+      if (Number.isFinite(Number(progress))) {
+        const clamped = Math.max(0, Math.min(1, Number(progress)));
+        job.progress = Math.max(job.progress ?? 0, clamped);
+      }
+      if (stage && stage.trim()) {
+        job.stage = stage.trim();
+      }
+    };
+    updateLocalProgress(0.02, 'Initializing local generation...');
+
     const jobOutputDir = path.join(ACESTEP_DIR, 'output', jobId);
     await mkdir(jobOutputDir, { recursive: true });
 
@@ -676,10 +687,6 @@ async function processGeneration(
 
     const taskType = params.taskType ?? 'text2music';
     const envOverrides: Record<string, string> = {};
-    // Cover/repaint do not use LM for generation, so avoid initializing 5Hz LM.
-    if (taskType === 'cover' || taskType === 'repaint') {
-      envOverrides.ACESTEP_INIT_LLM = '0';
-    }
     const requestedBatchSize = Math.max(1, params.batchSize ?? 1);
     const shouldSerialCoverBatch =
       (taskType === 'cover' || taskType === 'audio2audio') && requestedBatchSize > 1;
@@ -713,6 +720,11 @@ async function processGeneration(
       let lmInitialized = false;
 
       for (let i = 0; i < requestedBatchSize; i += 1) {
+        updateLocalProgress(
+          i / requestedBatchSize,
+          `Generating variation ${i + 1}/${requestedBatchSize}...`,
+        );
+
         const serialArgs = [...args];
         setArgValue(serialArgs, '--batch-size', '1');
         setArgValue(serialArgs, '--output-dir', path.join(jobOutputDir, `item_${i}`));
@@ -723,7 +735,23 @@ async function processGeneration(
           removeArgWithValue(serialArgs, '--seed');
         }
 
-        const serialResult = await runPythonGeneration(serialArgs, envOverrides);
+        const serialResult = await runPythonGeneration(
+          serialArgs,
+          envOverrides,
+          (event) => {
+            const perItemProgress = Number.isFinite(Number(event.progress))
+              ? Math.max(0, Math.min(1, Number(event.progress)))
+              : undefined;
+            const weightedProgress =
+              perItemProgress === undefined
+                ? undefined
+                : (i + perItemProgress) / requestedBatchSize;
+            const weightedStage = event.stage
+              ? `Variation ${i + 1}/${requestedBatchSize}: ${event.stage}`
+              : `Generating variation ${i + 1}/${requestedBatchSize}...`;
+            updateLocalProgress(weightedProgress, weightedStage);
+          },
+        );
         if (!serialResult.success) {
           throw new Error(serialResult.error || `Serial generation failed at item ${i + 1}`);
         }
@@ -738,6 +766,10 @@ async function processGeneration(
           durationSource = serialResult.duration_source;
         }
         lmInitialized = lmInitialized || Boolean(serialResult.lm_initialized);
+        updateLocalProgress(
+          (i + 1) / requestedBatchSize,
+          `Completed variation ${i + 1}/${requestedBatchSize}`,
+        );
       }
 
       result = {
@@ -749,7 +781,9 @@ async function processGeneration(
         lm_initialized: lmInitialized,
       };
     } else {
-      result = await runPythonGeneration(args, envOverrides);
+      result = await runPythonGeneration(args, envOverrides, (event) => {
+        updateLocalProgress(event.progress, event.stage);
+      });
     }
 
     if (!result.success) {
@@ -778,6 +812,7 @@ async function processGeneration(
     }
 
     try {
+      updateLocalProgress(0.98, 'Finalizing generated audio files...');
       await rm(jobOutputDir, { recursive: true, force: true });
     } catch (cleanupError) {
       console.warn(`Job ${jobId}: Failed to cleanup output dir`, cleanupError);
@@ -802,6 +837,7 @@ async function processGeneration(
       timeSignature: params.timeSignature,
       status: 'succeeded',
     };
+    updateLocalProgress(1, 'Completed');
     job.rawResponse = result;
     console.log(`Job ${jobId}: Completed in ${result.elapsed_seconds?.toFixed(1)}s with ${audioUrls.length} audio files`);
 
@@ -827,9 +863,15 @@ interface PythonResult {
   error?: string;
 }
 
+interface PythonProgressEvent {
+  progress?: number;
+  stage?: string;
+}
+
 function runPythonGeneration(
   scriptArgs: string[],
   envOverrides: Record<string, string> = {},
+  onProgress?: (event: PythonProgressEvent) => void,
 ): Promise<PythonResult> {
   return new Promise((resolve) => {
     const pythonPath = resolvePythonPath(ACESTEP_DIR);
@@ -847,23 +889,53 @@ function runPythonGeneration(
 
     let stdout = '';
     let stderr = '';
+    let stderrBuffer = '';
+    const progressPrefix = '__ACE_STEP_PROGRESS__';
+
+    const handleStderrLine = (line: string): void => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      if (trimmed.startsWith(progressPrefix)) {
+        const payload = trimmed.slice(progressPrefix.length);
+        try {
+          const parsed = JSON.parse(payload) as PythonProgressEvent;
+          if (onProgress) {
+            onProgress(parsed);
+          }
+        } catch {
+          // fall through to normal logging when payload is malformed
+          console.log(`[ACE-Step] ${trimmed}`);
+        }
+        return;
+      }
+
+      console.log(`[ACE-Step] ${trimmed}`);
+    };
 
     proc.stdout.on('data', (data) => {
       stdout += data.toString();
     });
 
     proc.stderr.on('data', (data) => {
-      stderr += data.toString();
-      // Log progress to console
-      const lines = data.toString().split('\n');
-      for (const line of lines) {
-        if (line.trim()) {
-          console.log(`[ACE-Step] ${line}`);
-        }
+      const chunk = data.toString();
+      stderr += chunk;
+      stderrBuffer += chunk;
+
+      let lineBreakIdx = stderrBuffer.indexOf('\n');
+      while (lineBreakIdx >= 0) {
+        const line = stderrBuffer.slice(0, lineBreakIdx);
+        stderrBuffer = stderrBuffer.slice(lineBreakIdx + 1);
+        handleStderrLine(line);
+        lineBreakIdx = stderrBuffer.indexOf('\n');
       }
     });
 
     proc.on('close', (code) => {
+      if (stderrBuffer.trim()) {
+        handleStderrLine(stderrBuffer);
+      }
+
       if (code !== 0) {
         resolve({ success: false, error: stderr || `Process exited with code ${code}` });
         return;
@@ -969,6 +1041,16 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
   }
 
   const elapsed = Math.floor((Date.now() - job.startTime) / 1000);
+  const fallbackEtaSeconds = Math.max(0, 180 - elapsed);
+  const etaFromProgress = (() => {
+    const p = Number(job.progress);
+    if (!Number.isFinite(p) || p <= 0 || p >= 1) {
+      return undefined;
+    }
+    // Linear estimate from observed progress.
+    return Math.max(0, Math.round((elapsed / p) - elapsed));
+  })();
+  const resolvedEtaSeconds = etaFromProgress ?? fallbackEtaSeconds;
 
   // Include queue position if queued
   if (job.status === 'queued') {
@@ -1007,9 +1089,15 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
             const stage = typeof (item as any).stage === 'string' ? (item as any).stage : undefined;
             if (progress !== undefined) job.progress = progress;
             if (stage) job.stage = stage;
+            const normalizedProgress = progress !== undefined
+              ? Math.max(0, Math.min(1, progress > 1 ? progress / 100 : progress))
+              : undefined;
+            const apiEta = normalizedProgress && normalizedProgress > 0 && normalizedProgress < 1
+              ? Math.max(0, Math.round((elapsed / normalizedProgress) - elapsed))
+              : fallbackEtaSeconds;
             return {
               status: job.status,
-              etaSeconds: Math.max(0, 180 - elapsed),
+              etaSeconds: apiEta,
               progress: progress ?? job.progress,
               stage: stage ?? job.stage,
             };
@@ -1023,7 +1111,7 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
 
   return {
     status: job.status,
-    etaSeconds: Math.max(0, 180 - elapsed), // 3 min estimate
+    etaSeconds: resolvedEtaSeconds,
     progress: job.progress,
     stage: job.stage,
   };
