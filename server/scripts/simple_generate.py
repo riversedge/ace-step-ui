@@ -32,6 +32,24 @@ _llm_init_attempted = False
 
 # Optional LoRA auto-load config
 LORA_CONFIG_PATH = os.environ.get("ACESTEP_LORA_CONFIG")
+PROGRESS_PREFIX = "__ACE_STEP_PROGRESS__"
+
+
+def _emit_progress_event(progress: float, stage: Optional[str] = None) -> None:
+    try:
+        value = max(0.0, min(1.0, float(progress)))
+    except (TypeError, ValueError):
+        return
+
+    payload: Dict[str, Any] = {"progress": value}
+    if stage:
+        payload["stage"] = str(stage)
+
+    print(
+        f"{PROGRESS_PREFIX}{json.dumps(payload, ensure_ascii=True)}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def _select_lora_instance(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -315,7 +333,9 @@ def generate(
     output_dir: str = None,
 ):
     """Generate music and return audio file paths."""
+    _emit_progress_event(0.01, "Initializing ACE-Step...")
     handler, llm_handler = get_handlers()
+    _emit_progress_event(0.10, "Models initialized")
 
     if output_dir is None:
         output_dir = os.path.join(ACESTEP_PATH, "output")
@@ -397,8 +417,19 @@ def generate(
         use_random_seed=(seed < 0),
     )
 
+    def _progress_callback(value: float, desc: Optional[str] = None, **_: Any) -> None:
+        _emit_progress_event(value, desc)
+
+    _emit_progress_event(0.12, "Starting generation...")
     start_time = time.time()
-    result = generate_music(handler, llm_handler, params, config, save_dir=output_dir)
+    result = generate_music(
+        handler,
+        llm_handler,
+        params,
+        config,
+        save_dir=output_dir,
+        progress=_progress_callback,
+    )
     elapsed = time.time() - start_time
 
     # Prefer LM-generated duration after generation if user chose auto and CoT resolved it.
@@ -422,6 +453,8 @@ def generate(
         for audio in result.audios:
             if isinstance(audio, dict) and audio.get("path"):
                 audio_paths.append(audio["path"])
+
+    _emit_progress_event(1.0, "Generation complete")
 
     return {
         "success": True,
