@@ -674,7 +674,83 @@ async function processGeneration(
     if (params.cfgIntervalStart !== undefined && params.cfgIntervalStart > 0) args.push('--cfg-interval-start', String(params.cfgIntervalStart));
     if (params.cfgIntervalEnd !== undefined && params.cfgIntervalEnd < 1.0) args.push('--cfg-interval-end', String(params.cfgIntervalEnd));
 
-    const result = await runPythonGeneration(args);
+    const taskType = params.taskType ?? 'text2music';
+    const envOverrides: Record<string, string> = {};
+    // Cover/repaint do not use LM for generation, so avoid initializing 5Hz LM.
+    if (taskType === 'cover' || taskType === 'repaint') {
+      envOverrides.ACESTEP_INIT_LLM = '0';
+    }
+    const requestedBatchSize = Math.max(1, params.batchSize ?? 1);
+    const shouldSerialCoverBatch =
+      (taskType === 'cover' || taskType === 'audio2audio') && requestedBatchSize > 1;
+
+    const setArgValue = (argList: string[], flag: string, value: string): void => {
+      const idx = argList.indexOf(flag);
+      if (idx >= 0 && idx + 1 < argList.length) {
+        argList[idx + 1] = value;
+      } else {
+        argList.push(flag, value);
+      }
+    };
+
+    const removeArgWithValue = (argList: string[], flag: string): void => {
+      const idx = argList.indexOf(flag);
+      if (idx >= 0) {
+        argList.splice(idx, 2);
+      }
+    };
+
+    let result: PythonResult;
+    if (shouldSerialCoverBatch) {
+      console.log(
+        `[ACE-Step] cover/audio2audio batch=${requestedBatchSize}: running serial single-item generations to reduce peak memory`,
+      );
+
+      const mergedAudioPaths: string[] = [];
+      let totalElapsedSeconds = 0;
+      let resolvedDurationSeconds: number | undefined;
+      let durationSource: string | undefined;
+      let lmInitialized = false;
+
+      for (let i = 0; i < requestedBatchSize; i += 1) {
+        const serialArgs = [...args];
+        setArgValue(serialArgs, '--batch-size', '1');
+        setArgValue(serialArgs, '--output-dir', path.join(jobOutputDir, `item_${i}`));
+
+        // Match ACE-Step seed semantics: when a single fixed seed is provided for a batch,
+        // only the first item uses it and the remaining items use random seeds.
+        if (params.randomSeed === false && params.seed !== undefined && params.seed >= 0 && i > 0) {
+          removeArgWithValue(serialArgs, '--seed');
+        }
+
+        const serialResult = await runPythonGeneration(serialArgs, envOverrides);
+        if (!serialResult.success) {
+          throw new Error(serialResult.error || `Serial generation failed at item ${i + 1}`);
+        }
+        if (!serialResult.audio_paths || serialResult.audio_paths.length === 0) {
+          throw new Error(`No audio files generated for serial item ${i + 1}`);
+        }
+
+        mergedAudioPaths.push(...serialResult.audio_paths);
+        totalElapsedSeconds += serialResult.elapsed_seconds ?? 0;
+        if (!resolvedDurationSeconds && serialResult.resolved_duration_seconds && serialResult.resolved_duration_seconds > 0) {
+          resolvedDurationSeconds = serialResult.resolved_duration_seconds;
+          durationSource = serialResult.duration_source;
+        }
+        lmInitialized = lmInitialized || Boolean(serialResult.lm_initialized);
+      }
+
+      result = {
+        success: true,
+        audio_paths: mergedAudioPaths,
+        elapsed_seconds: totalElapsedSeconds,
+        resolved_duration_seconds: resolvedDurationSeconds,
+        duration_source: durationSource,
+        lm_initialized: lmInitialized,
+      };
+    } else {
+      result = await runPythonGeneration(args, envOverrides);
+    }
 
     if (!result.success) {
       throw new Error(result.error || 'Generation failed');
@@ -751,7 +827,10 @@ interface PythonResult {
   error?: string;
 }
 
-function runPythonGeneration(scriptArgs: string[]): Promise<PythonResult> {
+function runPythonGeneration(
+  scriptArgs: string[],
+  envOverrides: Record<string, string> = {},
+): Promise<PythonResult> {
   return new Promise((resolve) => {
     const pythonPath = resolvePythonPath(ACESTEP_DIR);
     const args = [PYTHON_SCRIPT, ...scriptArgs];
@@ -762,6 +841,7 @@ function runPythonGeneration(scriptArgs: string[]): Promise<PythonResult> {
         ...process.env,
         ACESTEP_PATH: ACESTEP_DIR,
         ACESTEP_LORA_CONFIG: LORA_CONFIG_PATH,
+        ...envOverrides,
       },
     });
 
