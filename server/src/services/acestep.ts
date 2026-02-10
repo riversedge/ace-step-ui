@@ -618,7 +618,9 @@ async function processGeneration(
     const jobOutputDir = path.join(ACESTEP_DIR, 'output', jobId);
     await mkdir(jobOutputDir, { recursive: true });
 
-    const durationToSend = params.duration && params.duration > 0 ? params.duration : 60;
+    // Keep "auto duration" behavior for local mode when user doesn't specify a duration.
+    // The Python wrapper will attempt LM-based duration inference first, then heuristic fallback.
+    const durationToSend = params.duration && params.duration > 0 ? params.duration : 0;
     const args = [
       '--prompt', prompt,
       '--duration', String(durationToSend),
@@ -705,7 +707,15 @@ async function processGeneration(
       console.warn(`Job ${jobId}: Failed to cleanup output dir`, cleanupError);
     }
 
-    const finalDuration = actualDuration > 0 ? actualDuration : (params.duration && params.duration > 0 ? params.duration : 60);
+    const pythonResolvedDuration =
+      typeof result.resolved_duration_seconds === 'number' && result.resolved_duration_seconds > 0
+        ? Math.round(result.resolved_duration_seconds)
+        : 0;
+
+    const finalDuration =
+      actualDuration > 0
+        ? actualDuration
+        : (pythonResolvedDuration || (params.duration && params.duration > 0 ? params.duration : 30));
 
     job.status = 'succeeded';
     job.result = {
@@ -735,6 +745,9 @@ interface PythonResult {
   success: boolean;
   audio_paths?: string[];
   elapsed_seconds?: number;
+  resolved_duration_seconds?: number;
+  duration_source?: string;
+  lm_initialized?: boolean;
   error?: string;
 }
 
