@@ -321,8 +321,8 @@ def generate(
     lm_top_p: float = 0.9,
     lm_negative_prompt: str = "",
     use_cot_metas: bool = True,
-    use_cot_caption: bool = True,
-    use_cot_language: bool = True,
+    use_cot_caption: bool = False,
+    use_cot_language: bool = False,
 
     # Advanced parameters
     use_adg: bool = False,
@@ -506,9 +506,13 @@ def main():
     parser.add_argument("--lm-top-k", type=int, default=0, help="LLM top-k sampling")
     parser.add_argument("--lm-top-p", type=float, default=0.9, help="LLM top-p sampling")
     parser.add_argument("--lm-negative-prompt", type=str, default="", help="LLM negative prompt")
-    parser.add_argument("--no-cot-metas", action="store_true", help="Disable CoT for metadata")
-    parser.add_argument("--no-cot-caption", action="store_true", help="Disable CoT for caption")
-    parser.add_argument("--no-cot-language", action="store_true", help="Disable CoT for language")
+    parser.add_argument("--cot-metas", dest="use_cot_metas", action="store_true", help="Enable CoT for metadata")
+    parser.add_argument("--no-cot-metas", dest="use_cot_metas", action="store_false", help="Disable CoT for metadata")
+    parser.add_argument("--cot-caption", dest="use_cot_caption", action="store_true", help="Enable CoT for caption")
+    parser.add_argument("--no-cot-caption", dest="use_cot_caption", action="store_false", help="Disable CoT for caption")
+    parser.add_argument("--cot-language", dest="use_cot_language", action="store_true", help="Enable CoT for language")
+    parser.add_argument("--no-cot-language", dest="use_cot_language", action="store_false", help="Disable CoT for language")
+    parser.set_defaults(use_cot_metas=True, use_cot_caption=False, use_cot_language=False)
 
     # Advanced parameters
     parser.add_argument("--use-adg", action="store_true", help="Use Adaptive Dual Guidance")
@@ -558,9 +562,9 @@ def main():
             lm_top_k=args.lm_top_k,
             lm_top_p=args.lm_top_p,
             lm_negative_prompt=args.lm_negative_prompt,
-            use_cot_metas=not args.no_cot_metas,
-            use_cot_caption=not args.no_cot_caption,
-            use_cot_language=not args.no_cot_language,
+            use_cot_metas=args.use_cot_metas,
+            use_cot_caption=args.use_cot_caption,
+            use_cot_language=args.use_cot_language,
 
             # Advanced
             use_adg=args.use_adg,
