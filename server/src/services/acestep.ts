@@ -958,13 +958,6 @@ function runPythonGeneration(
       resolve({ success: false, error: `Generation timed out after ${timeoutMs / 1000}s` });
     }, timeoutMs);
 
-    // Kill process after timeout (default 10 minutes)
-    const timer = setTimeout(() => {
-      proc.kill('SIGTERM');
-      setTimeout(() => { if (!proc.killed) proc.kill('SIGKILL'); }, 5000);
-      resolve({ success: false, error: `Generation timed out after ${timeoutMs / 1000}s` });
-    }, timeoutMs);
-
     let stdout = '';
     let stderr = '';
     let stderrBuffer = '';
