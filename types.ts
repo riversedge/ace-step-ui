@@ -19,6 +19,7 @@ export interface Song {
   userId?: string;
   creator?: string;
   creator_avatar?: string;
+  ditModel?: string;
 }
 
 export interface Playlist {
@@ -58,6 +59,7 @@ export interface GenerationParams {
   lyrics: string;
   style: string;
   title: string;
+  ditModel?: string;
 
   // Common
   instrumental: boolean;
@@ -76,6 +78,7 @@ export interface GenerationParams {
   randomSeed: boolean;
   seed: number;
   thinking: boolean;
+  enhance?: boolean;
   audioFormat: 'mp3' | 'flac';
   inferMethod: 'ode' | 'sde';
   shift: number;
@@ -86,6 +89,8 @@ export interface GenerationParams {
   lmTopK: number;
   lmTopP: number;
   lmNegativePrompt: string;
+  lmBackend?: 'pt' | 'vllm';
+  lmModel?: string;
 
   // Expert Parameters
   referenceAudioUrl?: string;
@@ -147,4 +152,4 @@ export interface UserProfile {
 }
 
 // Simplified views for ACE-Step UI
-export type View = 'create' | 'library' | 'profile' | 'song' | 'playlist' | 'search';
+export type View = 'create' | 'library' | 'training' | 'profile' | 'song' | 'playlist' | 'search' | 'news';

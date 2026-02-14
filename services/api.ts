@@ -106,6 +106,8 @@ export interface Song {
   user_id?: string;
   created_at: string;
   creator?: string;
+  creator_avatar?: string;
+  ditModel?: string;
   generation_params?: any;
 }
 
@@ -155,8 +157,46 @@ export const songsApi = {
   createSong: (song: Partial<Song>, token: string): Promise<{ song: Song }> =>
     api('/api/songs', { method: 'POST', body: song, token }),
 
-  updateSong: (id: string, updates: Partial<Song>, token: string): Promise<{ song: Song }> =>
-    api(`/api/songs/${id}`, { method: 'PATCH', body: updates, token }),
+  updateSong: async (id: string, updates: Partial<Song>, token: string): Promise<{ song: any }> => {
+    const result = await api(`/api/songs/${id}`, { method: 'PATCH', body: updates, token }) as { song: any };
+    const s = result.song;
+    const rawUrl = s.audio_url || s.audioUrl;
+    const resolvedUrl = getAudioUrl(rawUrl, s.id);
+
+    return {
+      song: {
+        id: s.id,
+        title: s.title,
+        lyrics: s.lyrics,
+        style: s.style,
+        caption: s.caption,
+        cover_url: s.cover_url,
+        coverUrl: s.cover_url || s.coverUrl || `https://picsum.photos/seed/${s.id}/400/400`,
+        duration: s.duration && s.duration > 0 ? `${Math.floor(s.duration / 60)}:${String(Math.floor(s.duration % 60)).padStart(2, '0')}` : '0:00',
+        createdAt: new Date(s.created_at || s.createdAt),
+        created_at: s.created_at,
+        tags: s.tags || [],
+        audioUrl: resolvedUrl,
+        audio_url: resolvedUrl,
+        isPublic: s.is_public ?? s.isPublic,
+        is_public: s.is_public ?? s.isPublic,
+        likeCount: s.like_count || s.likeCount || 0,
+        like_count: s.like_count || s.likeCount || 0,
+        viewCount: s.view_count || s.viewCount || 0,
+        view_count: s.view_count || s.viewCount || 0,
+        userId: s.user_id || s.userId,
+        user_id: s.user_id || s.userId,
+        creator: s.creator,
+        creator_avatar: s.creator_avatar,
+        ditModel: s.dit_model || s.ditModel,
+        isGenerating: s.isGenerating,
+        queuePosition: s.queuePosition,
+        bpm: s.bpm,
+        key_scale: s.key_scale,
+        time_signature: s.time_signature,
+      }
+    };
+  },
 
   deleteSong: (id: string, token: string): Promise<{ success: boolean }> =>
     api(`/api/songs/${id}`, { method: 'DELETE', token }),
@@ -206,6 +246,9 @@ export interface GenerationParams {
   style: string;
   title: string;
 
+  // Model Selection
+  ditModel?: string;
+
   // Common
   instrumental: boolean;
   vocalLanguage?: string;
@@ -233,6 +276,8 @@ export interface GenerationParams {
   lmTopK?: number;
   lmTopP?: number;
   lmNegativePrompt?: string;
+  lmBackend?: 'pt' | 'vllm';
+  lmModel?: string;
 
   // Expert Parameters
   referenceAudioUrl?: string;
@@ -262,15 +307,19 @@ export interface GenerationParams {
   trackName?: string;
   completeTrackClasses?: string[];
   isFormatCaption?: boolean;
+  loraLoaded?: boolean;
 }
 
 export interface GenerationJob {
   jobId: string;
+  id?: string;
   status: 'pending' | 'queued' | 'running' | 'succeeded' | 'failed';
   queuePosition?: number;
   etaSeconds?: number;
   progress?: number;
   stage?: string;
+  params?: any;
+  created_at?: string;
   result?: {
     audioUrls: string[];
     bpm?: number;
@@ -316,18 +365,59 @@ export const generateApi = {
     temperature?: number;
     topK?: number;
     topP?: number;
+    lmModel?: string;
+    lmBackend?: string;
   }, token: string): Promise<{
-    success: boolean;
     caption?: string;
     lyrics?: string;
     bpm?: number;
     duration?: number;
     key_scale?: string;
-    language?: string;
+    vocal_language?: string;
     time_signature?: string;
     status_message?: string;
     error?: string;
   }> => api('/api/generate/format', { method: 'POST', body: params, token }),
+
+  // Random description from Gradio's example library
+  getRandomDescription: (token: string): Promise<{
+    description: string;
+    instrumental: boolean;
+    vocalLanguage: string;
+  }> => api('/api/generate/random-description', { token }),
+
+  // LoRA Inference (requires ACE-Step training fork)
+  loadLora: (params: {
+    lora_path: string;
+  }, token: string): Promise<{
+    message: string;
+    lora_path: string;
+  }> => api('/api/lora/load', { method: 'POST', body: params, token }),
+
+  unloadLora: (token: string): Promise<{
+    message: string;
+  }> => api('/api/lora/unload', { method: 'POST', token }),
+
+  setLoraScale: (params: {
+    scale: number;
+  }, token: string): Promise<{
+    message: string;
+    scale: number;
+  }> => api('/api/lora/scale', { method: 'POST', body: params, token }),
+
+  toggleLora: (params: {
+    enabled: boolean;
+  }, token: string): Promise<{
+    message: string;
+    active: boolean;
+  }> => api('/api/lora/toggle', { method: 'POST', body: params, token }),
+
+  getLoraStatus: (token: string): Promise<{
+    loaded: boolean;
+    active: boolean;
+    scale: number;
+    path: string;
+  }> => api('/api/lora/status', { token }),
 };
 
 // Users API
@@ -466,4 +556,239 @@ export interface ContactFormData {
 export const contactApi = {
   submit: (data: ContactFormData): Promise<{ success: boolean; message: string; id: string }> =>
     api('/api/contact', { method: 'POST', body: data }),
+};
+
+// Training API (LoRA fine-tuning via Gradio)
+export interface TrainingSample {
+  audio: unknown;
+  filename: string;
+  caption: string;
+  genre: string;
+  promptOverride: string;
+  lyrics: string;
+  bpm: number;
+  key: string;
+  timeSignature: string;
+  duration: number;
+  language: string;
+  instrumental: boolean;
+  rawLyrics?: string;
+}
+
+export interface DatasetSettings {
+  datasetName: string;
+  customTag: string;
+  tagPosition: 'prepend' | 'append' | 'replace';
+  allInstrumental: boolean;
+  genreRatio: number;
+}
+
+export interface TrainingParams {
+  tensorDir?: string;
+  rank?: number;
+  alpha?: number;
+  dropout?: number;
+  learningRate?: number;
+  epochs?: number;
+  batchSize?: number;
+  gradientAccumulation?: number;
+  saveEvery?: number;
+  shift?: number;
+  seed?: number;
+  outputDir?: string;
+  resumeCheckpoint?: string | null;
+}
+
+// Helper: build proxy URL for training audio files
+export function getTrainingAudioUrl(audioPath: unknown, token?: string): string | undefined {
+  if (!audioPath) return undefined;
+
+  // Handle Gradio FileData objects
+  if (typeof audioPath === 'object' && audioPath !== null) {
+    const fd = audioPath as Record<string, unknown>;
+    if (fd.url && typeof fd.url === 'string') return fd.url;
+    if (fd.path && typeof fd.path === 'string') {
+      return `${API_BASE}/api/training/audio?path=${encodeURIComponent(fd.path)}`;
+    }
+    return undefined;
+  }
+
+  // Handle absolute path string
+  if (typeof audioPath === 'string') {
+    if (audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.startsWith('/audio/')) {
+      return audioPath;
+    }
+    return `${API_BASE}/api/training/audio?path=${encodeURIComponent(audioPath)}`;
+  }
+
+  return undefined;
+}
+
+export const trainingApi = {
+  // Upload audio files for a dataset
+  uploadAudio: async (files: File[], datasetName: string, token: string): Promise<{
+    files: Array<{ filename: string; originalName: string; size: number; path: string }>;
+    uploadDir: string;
+    count: number;
+  }> => {
+    const formData = new FormData();
+    formData.append('datasetName', datasetName);
+    for (const file of files) {
+      formData.append('audio', file);
+    }
+    const response = await fetch(`${API_BASE}/api/training/upload-audio`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(error.error || 'Upload failed');
+    }
+    return response.json();
+  },
+
+  // Build dataset JSON from uploaded audio files
+  buildDataset: (params: {
+    datasetName: string;
+    customTag?: string;
+    tagPosition?: string;
+    allInstrumental?: boolean;
+  }, token: string): Promise<{
+    status: string;
+    dataframe: unknown;
+    sampleCount: number;
+    sample: TrainingSample;
+    settings: DatasetSettings;
+    datasetPath: string;
+  }> => api('/api/training/build-dataset', { method: 'POST', body: params, token }),
+
+  // Scan directory for audio files (Node.js implementation)
+  scanDirectory: (params: {
+    audioDir: string;
+    datasetName?: string;
+    customTag?: string;
+    tagPosition?: string;
+    allInstrumental?: boolean;
+  }, token: string): Promise<{
+    status: string;
+    dataframe: unknown;
+    sampleCount: number;
+    audioDir: string;
+  }> => api('/api/training/scan-directory', { method: 'POST', body: params, token }),
+
+  // Auto-label dataset samples (requires model loaded in Gradio)
+  autoLabel: (params: {
+    skipMetas?: boolean;
+    formatLyrics?: boolean;
+    transcribeLyrics?: boolean;
+    onlyUnlabeled?: boolean;
+  }, token: string): Promise<{
+    dataframe?: unknown;
+    status: string;
+    error?: string;
+    hint?: string;
+  }> => api('/api/training/auto-label', { method: 'POST', body: params, token }),
+
+  // Initialize model for training (requires Gradio)
+  initModel: (params: {
+    checkpoint?: string;
+    configPath?: string;
+    device?: string;
+    initLlm?: boolean;
+    lmModelPath?: string;
+    backend?: string;
+    useFlashAttention?: boolean;
+    offloadToCpu?: boolean;
+    offloadDitToCpu?: boolean;
+    compileModel?: boolean;
+    quantization?: boolean;
+  }, token: string): Promise<{
+    status: string;
+    modelReady?: boolean;
+    error?: string;
+    hint?: string;
+  }> => api('/api/training/init-model', { method: 'POST', body: params, token }),
+
+  // List available checkpoints
+  getCheckpoints: (token: string): Promise<{
+    checkpoints: string[];
+    configs: string[];
+  }> => api('/api/training/checkpoints', { token }),
+
+  // List LoRA training checkpoints
+  getLoraCheckpoints: (dir: string, token: string): Promise<{
+    checkpoints: string[];
+    outputDir: string;
+  }> => api(`/api/training/lora-checkpoints?dir=${encodeURIComponent(dir)}`, { token }),
+
+  // Preprocess dataset to tensors
+  preprocess: (params: {
+    datasetPath: string;
+    outputDir?: string;
+  }, token: string): Promise<{
+    status: string;
+    message?: string;
+    output_files?: number;
+  }> => api('/api/training/preprocess', { method: 'POST', body: params, token }),
+
+  loadDataset: (datasetPath: string, token: string): Promise<{
+    status: string;
+    dataframe: unknown;
+    sampleCount: number;
+    sample: TrainingSample;
+    settings: DatasetSettings;
+  }> => api('/api/training/load-dataset', { method: 'POST', body: { datasetPath }, token }),
+
+  getSamplePreview: (idx: number, token: string): Promise<TrainingSample> =>
+    api(`/api/training/sample-preview?idx=${idx}`, { token }),
+
+  saveSample: (params: {
+    sampleIdx: number;
+    caption: string;
+    genre: string;
+    promptOverride: string;
+    lyrics: string;
+    bpm: number;
+    key: string;
+    timeSignature: string;
+    language: string;
+    instrumental: boolean;
+  }, token: string): Promise<{ dataframe: unknown; status: string }> =>
+    api('/api/training/save-sample', { method: 'POST', body: params, token }),
+
+  updateSettings: (params: {
+    customTag: string;
+    tagPosition: string;
+    allInstrumental: boolean;
+    genreRatio: number;
+  }, token: string): Promise<{ success: boolean }> =>
+    api('/api/training/update-settings', { method: 'POST', body: params, token }),
+
+  saveDataset: (params: {
+    savePath?: string;
+    datasetName?: string;
+  }, token: string): Promise<{ status: string; path: string }> =>
+    api('/api/training/save-dataset', { method: 'POST', body: params, token }),
+
+  loadTensors: (tensorDir: string, token: string): Promise<{ status: string }> =>
+    api('/api/training/load-tensors', { method: 'POST', body: { tensorDir }, token }),
+
+  startTraining: (params: TrainingParams, token: string): Promise<{
+    progress: string;
+    log: string;
+    metrics: unknown;
+  }> => api('/api/training/start', { method: 'POST', body: params, token }),
+
+  stopTraining: (token: string): Promise<{ status: string }> =>
+    api('/api/training/stop', { method: 'POST', token }),
+
+  exportLora: (params: {
+    exportPath?: string;
+    loraOutputDir?: string;
+  }, token: string): Promise<{ status: string }> =>
+    api('/api/training/export', { method: 'POST', body: params, token }),
+
+  importDataset: (datasetType: string, token: string): Promise<{ status: string }> =>
+    api('/api/training/import-dataset', { method: 'POST', body: { datasetType }, token }),
 };
