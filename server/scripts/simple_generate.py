@@ -29,6 +29,10 @@ _handler = None
 _llm_handler = None
 _lora_initialized = False
 _llm_init_attempted = False
+_lora_loaded_adapter_names: List[str] = []
+_lora_default_adapter: Optional[str] = None
+_lora_adapter_scales: Dict[str, float] = {}
+_lora_alias_to_internal: Dict[str, str] = {}
 
 # Optional LoRA auto-load config
 LORA_CONFIG_PATH = os.environ.get("ACESTEP_LORA_CONFIG")
@@ -52,38 +56,127 @@ def _emit_progress_event(progress: float, stage: Optional[str] = None) -> None:
     )
 
 
-def _select_lora_instance(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _normalize_lora_instances(config: Dict[str, Any]) -> List[Dict[str, Any]]:
     instances = config.get("instances")
     if not isinstance(instances, list):
-        return None
+        return []
 
-    default_name = config.get("default")
-    enabled_instances: List[Dict[str, Any]] = []
+    normalized: List[Dict[str, Any]] = []
+    used_names: set[str] = set()
 
-    for item in instances:
+    for idx, item in enumerate(instances):
         if not isinstance(item, dict):
             continue
-        path = item.get("path")
-        if not isinstance(path, str) or not path.strip():
+        raw_path = item.get("path")
+        if not isinstance(raw_path, str) or not raw_path.strip():
             continue
         enabled = item.get("enabled", True)
         if enabled is False:
             continue
-        enabled_instances.append(item)
 
-    if not enabled_instances:
+        raw_name = item.get("name")
+        if isinstance(raw_name, str) and raw_name.strip():
+            name = raw_name.strip()
+        else:
+            name = f"adapter_{idx + 1}"
+
+        if name in used_names:
+            base_name = name
+            suffix = 2
+            while f"{base_name}_{suffix}" in used_names:
+                suffix += 1
+            name = f"{base_name}_{suffix}"
+
+        used_names.add(name)
+        normalized.append(
+            {
+                "name": name,
+                "path": raw_path.strip(),
+                "scale": item.get("scale"),
+            }
+        )
+
+    return normalized
+
+
+def _resolve_lora_path(raw_path: str) -> str:
+    lora_path = raw_path.strip()
+    if not os.path.isabs(lora_path):
+        lora_path = os.path.normpath(os.path.join(os.path.dirname(LORA_CONFIG_PATH), lora_path))
+    return lora_path
+
+
+def _normalize_lora_scale(value: Any) -> Optional[float]:
+    if value is None:
         return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, parsed))
 
-    if isinstance(default_name, str) and default_name.strip():
-        for item in enabled_instances:
-            if item.get("name") == default_name:
-                return item
 
-    return enabled_instances[0]
+def _is_prefix_match(text: str, label: str) -> bool:
+    text_l = text.lower()
+    label_l = label.lower()
+    if not text_l.startswith(label_l):
+        return False
+    if len(text_l) == len(label_l):
+        return True
+    next_char = text_l[len(label_l)]
+    return next_char.isspace() or next_char in ",.:;!?)]-_/'\\\""
+
+
+def _select_adapter_from_prompt(prompt: str) -> Optional[str]:
+    if not _lora_loaded_adapter_names:
+        return None
+    text = (prompt or "").lstrip()
+    if not text:
+        return _lora_default_adapter
+
+    # Prefer longer names first to avoid short-name shadowing.
+    for name in sorted(_lora_loaded_adapter_names, key=len, reverse=True):
+        if _is_prefix_match(text, name):
+            return name
+
+    return _lora_default_adapter
+
+
+def _apply_active_adapter_for_prompt(handler: "AceStepHandler", prompt: str) -> None:
+    target = _select_adapter_from_prompt(prompt)
+    if not target or not hasattr(handler, "set_active_lora_adapter"):
+        return
+    target_internal = _lora_alias_to_internal.get(target, target)
+
+    current_active: Optional[str] = None
+    if hasattr(handler, "get_lora_status"):
+        try:
+            status = handler.get_lora_status()
+            if isinstance(status, dict):
+                active = status.get("active_adapter")
+                if isinstance(active, str):
+                    current_active = active
+        except Exception:
+            pass
+
+    if current_active != target_internal:
+        try:
+            set_status = handler.set_active_lora_adapter(target_internal)
+            print(f"[ACE-Step] {set_status} (auto-selected from prompt)", file=sys.stderr)
+        except Exception as e:
+            print(f"[ACE-Step] Failed to auto-select LoRA adapter ({target}->{target_internal}): {e}", file=sys.stderr)
+
+    scale_val = _lora_adapter_scales.get(target)
+    if scale_val is not None:
+        try:
+            scale_status = handler.set_lora_scale(scale_val)
+            print(f"[ACE-Step] {scale_status} (name={target}, auto-selected)", file=sys.stderr)
+        except Exception as e:
+            print(f"[ACE-Step] Failed to apply LoRA scale ({target}): {e}", file=sys.stderr)
 
 
 def _load_lora_from_config(handler: "AceStepHandler") -> None:
-    global _lora_initialized
+    global _lora_initialized, _lora_loaded_adapter_names, _lora_default_adapter, _lora_adapter_scales, _lora_alias_to_internal
     if _lora_initialized:
         return
     _lora_initialized = True
@@ -104,30 +197,117 @@ def _load_lora_from_config(handler: "AceStepHandler") -> None:
         print("[ACE-Step] LoRA config invalid: root is not an object", file=sys.stderr)
         return
 
-    selected = _select_lora_instance(config)
-    if not selected:
+    normalized = _normalize_lora_instances(config)
+    if not normalized:
         return
 
-    lora_path = selected.get("path")
-    if not isinstance(lora_path, str) or not lora_path.strip():
-        return
+    default_name = config.get("default")
+    ordered_instances: List[Dict[str, Any]] = list(normalized)
+    if isinstance(default_name, str) and default_name.strip():
+        match_idx = next((i for i, x in enumerate(ordered_instances) if x["name"] == default_name.strip()), None)
+        if match_idx is not None and match_idx > 0:
+            ordered_instances.insert(0, ordered_instances.pop(match_idx))
 
-    lora_path = lora_path.strip()
-    if not os.path.isabs(lora_path):
-        lora_path = os.path.normpath(os.path.join(os.path.dirname(LORA_CONFIG_PATH), lora_path))
+    loaded_instances: List[Dict[str, Any]] = []
+    first_loaded = False
 
-    status = handler.load_lora(lora_path)
-    print(f"[ACE-Step] {status}", file=sys.stderr)
+    for item in ordered_instances:
+        name = item["name"]
+        lora_path = _resolve_lora_path(item["path"])
 
-    scale = selected.get("scale")
-    if scale is not None:
         try:
-            scale_val = float(scale)
-            scale_val = max(0.0, min(1.0, scale_val))
-            scale_status = handler.set_lora_scale(scale_val)
-            print(f"[ACE-Step] {scale_status}", file=sys.stderr)
+            if not first_loaded:
+                status = handler.load_lora(lora_path)
+                print(f"[ACE-Step] {status} (name={name})", file=sys.stderr)
+                if not str(status).startswith("✅"):
+                    continue
+                first_loaded = True
+                loaded_instances.append(item)
+                continue
+
+            decoder = getattr(getattr(handler, "model", None), "decoder", None)
+            if decoder is None or not hasattr(decoder, "load_adapter"):
+                print(
+                    f"[ACE-Step] Additional LoRA adapter skipped (name={name}): decoder.load_adapter() unavailable",
+                    file=sys.stderr,
+                )
+                continue
+
+            try:
+                decoder.load_adapter(lora_path, adapter_name=name, is_trainable=False)
+            except TypeError:
+                decoder.load_adapter(lora_path, adapter_name=name)
+
+            print(f"[ACE-Step] ✅ LoRA loaded from {lora_path} (name={name})", file=sys.stderr)
+            loaded_instances.append(item)
         except Exception as e:
-            print(f"[ACE-Step] LoRA scale set failed: {e}", file=sys.stderr)
+            print(f"[ACE-Step] LoRA load failed (name={name}, path={lora_path}): {e}", file=sys.stderr)
+
+    if not loaded_instances:
+        return
+
+    if hasattr(handler, "_rebuild_lora_registry"):
+        try:
+            handler._rebuild_lora_registry()
+        except Exception:
+            pass
+
+    loaded_names = [x["name"] for x in loaded_instances]
+    _lora_loaded_adapter_names = loaded_names
+    _lora_alias_to_internal = {name: name for name in loaded_names}
+
+    # ACE-Step's load_lora() loads the first adapter under internal name "default".
+    # Keep user-facing names from config, but map aliases to internal adapter names.
+    if loaded_names and hasattr(handler, "get_lora_status"):
+        try:
+            status = handler.get_lora_status()
+            if isinstance(status, dict):
+                adapters = status.get("adapters")
+                if isinstance(adapters, list) and adapters:
+                    first_alias = loaded_names[0]
+                    if isinstance(adapters[0], str) and adapters[0]:
+                        _lora_alias_to_internal[first_alias] = adapters[0]
+        except Exception:
+            pass
+    active_name = loaded_names[0]
+    if isinstance(default_name, str) and default_name.strip() and default_name.strip() in loaded_names:
+        active_name = default_name.strip()
+    _lora_default_adapter = active_name
+
+    _lora_adapter_scales = {}
+    for item in loaded_instances:
+        scale_val = _normalize_lora_scale(item.get("scale"))
+        if scale_val is not None:
+            _lora_adapter_scales[item["name"]] = scale_val
+
+    active_internal = _lora_alias_to_internal.get(active_name, active_name)
+    if hasattr(handler, "set_active_lora_adapter"):
+        try:
+            active_status = handler.set_active_lora_adapter(active_internal)
+            print(f"[ACE-Step] {active_status} (alias={active_name})", file=sys.stderr)
+        except Exception as e:
+            print(f"[ACE-Step] Failed to set active LoRA adapter ({active_name}->{active_internal}): {e}", file=sys.stderr)
+
+    # Apply scale per adapter by activating each adapter and setting scale.
+    for item in loaded_instances:
+        name = item["name"]
+        internal_name = _lora_alias_to_internal.get(name, name)
+        scale_val = _lora_adapter_scales.get(name)
+        if scale_val is None:
+            continue
+        try:
+            if hasattr(handler, "set_active_lora_adapter"):
+                handler.set_active_lora_adapter(internal_name)
+            scale_status = handler.set_lora_scale(scale_val)
+            print(f"[ACE-Step] {scale_status} (name={name}, internal={internal_name})", file=sys.stderr)
+        except Exception as e:
+            print(f"[ACE-Step] LoRA scale set failed (name={name}, internal={internal_name}): {e}", file=sys.stderr)
+
+    if hasattr(handler, "set_active_lora_adapter"):
+        try:
+            handler.set_active_lora_adapter(active_internal)
+        except Exception:
+            pass
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -335,6 +515,7 @@ def generate(
     """Generate music and return audio file paths."""
     _emit_progress_event(0.01, "Initializing ACE-Step...")
     handler, llm_handler = get_handlers()
+    _apply_active_adapter_for_prompt(handler, prompt)
     _emit_progress_event(0.10, "Models initialized")
 
     if output_dir is None:

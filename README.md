@@ -368,7 +368,7 @@ PEXELS_API_KEY=your_key_here
 
 ## 🧩 LoRA Auto-Load
 
-ACE-Step UI can auto-load a LoRA adapter at startup by reading a JSON config file and invoking the ACE-Step 1.5 handler. This is handled in the local Python spawn path (not the REST API). When `ACESTEP_LORA_CONFIG` is set, generation will run locally so the LoRA can be loaded.
+ACE-Step UI can auto-load one or more LoRA adapters at startup by reading a JSON config file and invoking the ACE-Step 1.5 handler. This is handled in the local Python spawn path (not the REST API). When `ACESTEP_LORA_CONFIG` is set, generation will run locally so LoRA adapters can be loaded.
 
 ### How It Works
 1. Create or edit a LoRA config file (example at `config/lora.json`).
@@ -378,7 +378,7 @@ ACE-Step UI can auto-load a LoRA adapter at startup by reading a JSON config fil
 ### LoRA Config Schema
 The config is a JSON object with these fields:
 
-1. `default` (string, optional): name of the LoRA to load by default.
+1. `default` (string, optional): name of the adapter to make active after load.
 2. `instances` (array, required): list of LoRA entries.
 
 Each entry in `instances`:
@@ -404,7 +404,8 @@ Each entry in `instances`:
 ```
 
 ### Notes
-- Only one LoRA is auto-loaded. If `default` is set, that entry is used; otherwise the first enabled entry is loaded.
+- All enabled entries are loaded (when supported by the installed ACE-Step/PEFT runtime). If `default` is set and found, that adapter is made active; otherwise the first loaded adapter is active.
+- Per-entry `scale` is applied by temporarily activating each adapter and setting its scale.
 - Relative paths are resolved from the LoRA config file location.
 - LoRA auto-load uses the local Python spawn path, not the ACE-Step REST API. Keep the API server stopped or accept that generations will run locally when LoRA is configured.
 
