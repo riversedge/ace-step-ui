@@ -384,7 +384,9 @@ The config is a JSON object with these fields:
 Each entry in `instances`:
 
 1. `name` (string, required): label for the LoRA.
-2. `path` (string, required): path to the LoRA adapter directory (must contain `adapter_config.json`).
+2. `path` (string, required): path to an adapter.
+   - PEFT LoRA: directory containing `adapter_config.json`.
+   - LoKr (LyCORIS): directory containing `lokr_weights.safetensors` (or `final/lokr_weights.safetensors`), or a direct `.safetensors` file path.
 3. `scale` (number, optional): LoRA strength in the range `0.0` to `1.0`. Start at `0.85`, increase toward `1.0` for stronger style, decrease toward `0.6` if it overwhelms the base model.
 4. `enabled` (boolean, optional): set `false` to skip this entry.
 
@@ -404,7 +406,7 @@ Each entry in `instances`:
 ```
 
 ### Notes
-- All enabled entries are loaded (when supported by the installed ACE-Step/PEFT runtime). If `default` is set and found, that adapter is made active; otherwise the first loaded adapter is active.
+- All enabled entries are loaded (when supported by the installed ACE-Step runtime and local dependencies such as PEFT/LyCORIS). If `default` is set and found, that adapter is made active; otherwise the first loaded adapter is active.
 - Per-entry `scale` is applied by temporarily activating each adapter and setting its scale.
 - Relative paths are resolved from the LoRA config file location.
 - LoRA auto-load uses the local Python spawn path, not the ACE-Step REST API. Keep the API server stopped or accept that generations will run locally when LoRA is configured.
