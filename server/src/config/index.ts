@@ -6,6 +6,16 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const SERVER_ROOT = path.resolve(__dirname, '../..');
+
+function resolveServerPath(inputPath: string): string {
+  return path.isAbsolute(inputPath) ? inputPath : path.resolve(SERVER_ROOT, inputPath);
+}
+
+const databasePathEnv = process.env.DATABASE_PATH;
+const resolvedDatabasePath = databasePathEnv
+  ? resolveServerPath(databasePathEnv)
+  : path.join(SERVER_ROOT, 'data/acestep.db');
 
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
@@ -13,7 +23,7 @@ export const config = {
 
   // SQLite database
   database: {
-    path: process.env.DATABASE_PATH || path.join(__dirname, '../../data/acestep.db'),
+    path: resolvedDatabasePath,
   },
 
   // ACE-Step API (local)
@@ -33,7 +43,9 @@ export const config = {
   // Storage (local only)
   storage: {
     provider: 'local' as const,
-    audioDir: process.env.AUDIO_DIR || path.join(__dirname, '../../public/audio'),
+    audioDir: process.env.AUDIO_DIR
+      ? resolveServerPath(process.env.AUDIO_DIR)
+      : path.join(SERVER_ROOT, 'public/audio'),
   },
 
   // Training datasets (inside ACE-Step-1.5 so Gradio can access them)
