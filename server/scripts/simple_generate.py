@@ -377,6 +377,7 @@ def _apply_active_adapter_for_prompt(handler: "AceStepHandler", prompt: str) -> 
     if kind == "lora":
         target_internal = _lora_alias_to_internal.get(target, target)
         current_active: Optional[str] = None
+        lora_enabled = True
         if hasattr(handler, "get_lora_status"):
             try:
                 status = handler.get_lora_status()
@@ -384,9 +385,12 @@ def _apply_active_adapter_for_prompt(handler: "AceStepHandler", prompt: str) -> 
                     active = status.get("active_adapter")
                     if isinstance(active, str):
                         current_active = active
+                    active_flag = status.get("active")
+                    if isinstance(active_flag, bool):
+                        lora_enabled = active_flag
             except Exception:
                 pass
-        if current_active != target_internal:
+        if current_active != target_internal or not lora_enabled:
             _activate_adapter(handler, target)
             print(f"[ACE-Step] Active adapter auto-selected from prompt: {target}", file=sys.stderr)
     else:
