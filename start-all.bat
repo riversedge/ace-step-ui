@@ -28,6 +28,11 @@ if "%ACESTEP_PATH%"=="" (
     set ACESTEP_PATH=..\ACE-Step-1.5
 )
 
+REM Prefer a compatible Node runtime when NODE_BIN_DIR is set.
+if not "%NODE_BIN_DIR%"=="" (
+    set "PATH=%NODE_BIN_DIR%;%PATH%"
+)
+
 REM Check if ACE-Step exists
 if not exist "%ACESTEP_PATH%" (
     echo.

@@ -25,6 +25,12 @@ fi
 # Get ACE-Step path from environment or use default
 ACESTEP_PATH="${ACESTEP_PATH:-../ACE-Step-1.5}"
 
+# Prefer a compatible Node runtime when the bundled runtime is present.
+NODE_BIN_DIR="${NODE_BIN_DIR:-/Users/wrightws/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin}"
+if [ -x "$NODE_BIN_DIR/node" ]; then
+    export PATH="$NODE_BIN_DIR:$PATH"
+fi
+
 # Check if ACE-Step exists
 if [ ! -d "$ACESTEP_PATH" ]; then
     echo
