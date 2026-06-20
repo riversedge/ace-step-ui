@@ -76,6 +76,11 @@ tmp/
 temp/
 *.tmp
 
+# Local runtime config and duplicate server output
+config/lora.json
+server/data/*.secret
+server/server/
+
 # Demucs working files
 server/public/demucs-web/output/
 
